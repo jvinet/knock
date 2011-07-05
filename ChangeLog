@@ -1,0 +1,37 @@
+VERSION         DESCRIPTION
+-----------------------------------------------------------------------------
+0.5           - Added ability to change the knocking protocol (TCP/UDP) on a
+                per-port basis using the knock client (instead of the -u
+                switch)
+              - Patches from Philippe Lovis <philippe.lovis@gmx.ch>:
+                - Fixed memory leaks and potential security vulnerabilities
+                - Added --lookup option for DNS lookups (default is off)
+                - Added support for one-time sequences
+                - Added Interface directive to select the listening interface
+                - Moved packet filtering to kernel space with BPF filters
+                - Support for excluding TCP flags with "!"
+                - Removed the leftover/deprecated layer-2 MAC logic
+0.4           - Added support for DLT_RAW (PPPoE) interfaces
+              - Changed packet inspection to use the interface's IP address
+                to determine the flow direction, rather than the ethernet
+                MAC address
+              - Changed logging date format to ISO (yyyy-mm-dd)
+              - Added hostnames to logging output
+0.3.1         - Fixed a segfault occurring when a hostname cannot be resolved
+              - Patch from Simon Matter <simon.matter@ch.sauter-bc.com>:
+                - fixes build errors on Fedora
+              - Patch from Per Cederberg <per@percederberg.net>:
+                - fixes TCP SYN timeouts in knock client
+0.3           - Added PPP (LINUX_SLL) support
+              - Patches from Leo Costela:
+                - added Start_Command, Stop_Command, Cmd_Timeout directives,
+                  allowing a single door to open and then close after a
+                  timeout period
+                - knockd now re-reads config when a HUP is received
+                - multiple protocols supported on a per-port basis
+0.2.1         - Bugfix for TCP flag discrimination
+0.2           - Fixed the zombie process problem
+              - Added patch from Leo Costela:
+                - PidFile configuration directive
+                - support for specific TCP flags
+0.1           - Initial release

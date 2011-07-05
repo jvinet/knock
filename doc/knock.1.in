@@ -1,0 +1,42 @@
+.TH knock 1 "June 26, 2005" "knockd #VERSION#" ""
+.SH NAME
+knock \- port-knock client
+.SH SYNOPSIS
+\fBknock [options] <host> <port[:proto]> [port[:proto]] ...\fP
+.SH DESCRIPTION
+\fBknock\fP is a \fIport-knock\fP client.  It sends TCP/UDP packets
+to each specified \fIport\fP on \fIhost\fP, creating a special knock
+sequence on the listening server (see the \fBknockd\fP manpage for more
+info on this).
+.SH OPTIONS
+.TP
+.B "\-u, \-\-udp"
+Make all port hits use UDP (default is TCP).
+If you want each port to use a different protocol (TCP or UDP), then you
+can specify the protocol on a per-port basis.  See the example below.
+.TP
+.B "\-d <t>, \-\-delay <t>"
+Wait <t> milliseconds between each port hit.  This can be used in situations
+where a router mistakes your stream of SYN packets as a port scan and blocks
+them.  If the packet rate is slowed with --delay, then the router should let
+the packets through.
+.TP
+.B "\-v, \-\-verbose"
+Output verbose status messages.
+.TP
+.B "\-V, \-\-version"
+Display the version.
+.TP
+.B "\-h, \-\-help"
+Syntax help.
+.SH EXAMPLES
+.nf
+knock myserver.example.com 123:tcp 456:udp 789:tcp
+knock -u myserver.example.com 8284 4721 18592 42912
+.fi
+.SH SEE ALSO
+\fBknockd\fP is the accompanying port-knock server.
+.SH AUTHOR
+.nf
+Judd Vinet <jvinet@zeroflux.org>
+.fi

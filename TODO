@@ -1,0 +1,6 @@
+- allow IP ACLs for doors
+  - eg, allow = 192.168.0.0/24
+- dynamic knock mechanism
+  - the knock sequence itself could define the port to open
+  - the knock sequence could be tied to predictable variables
+		- date: hour of the day, day of the month, year, etc

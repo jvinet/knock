@@ -1,0 +1,203 @@
+.TH knockd 1 "June 26, 2005" "knockd #VERSION#" ""
+.SH NAME
+knockd \- port-knock server
+.SH SYNOPSIS
+\fBknockd [options]\fP
+.SH DESCRIPTION
+\fBknockd\fP is a \fIport-knock\fP server.  It listens to all traffic on
+an ethernet (or PPP) interface, looking for special "knock" sequences of port-hits.
+A client makes these port-hits by sending a TCP (or UDP) packet to a
+port on the server.  This port need not be open -- since knockd listens
+at the link-layer level, it sees all traffic even if it's destined for a
+closed port.  When the server detects a specific sequence of port-hits, it
+runs a command defined in its configuration file.  This can be used to open
+up holes in a firewall for quick access.
+.SH COMMANDLINE OPTIONS
+.TP
+.B "\-i, \-\-interface <int>"
+Specify an interface to listen on.  The default is \fIeth0\fP.
+.TP
+.B "\-d, \-\-daemon"
+Become a daemon.  This is usually desired for normal server-like operation.
+.TP
+.B "\-c, \-\-config <file>"
+Specify an alternate location for the config file.  Default is
+\fI/etc/knockd.conf\fP.
+.TP
+.B "\-D, \-\-debug"
+Ouput debugging messages.
+.TP
+.B "\-l, \-\-lookup"
+Lookup DNS names for log entries. This may be a security risk! See section
+\fBSECURITY NOTES\fP.
+.TP
+.B "\-v, \-\-verbose"
+Output verbose status messages.
+.TP
+.B "\-V, \-\-version"
+Display the version.
+.TP
+.B "\-h, \-\-help"
+Syntax help.
+.SH CONFIGURATION
+knockd reads all knock/event sets from a configuration file.  Each knock/event
+begins with a title marker, in the form \fB[name]\fP, where \fIname\fP is the
+name of the event that will appear in the log.  A special marker, \fB[options]\fP,
+is used to define global options.
+.TP
+.SH Example #1:
+.RS
+This example uses two knocks.  The first will allow the knocker to access port
+22 (SSH), and the second will close the port when the knocker is complete.
+As you can see, this could be useful if you run a very restrictive (DENY policy)
+firewall and would like to access it discreetly.
+
+.nf
+[options]
+	logfile = /var/log/knockd.log
+
+[openSSH]
+	sequence    = 7000,8000,9000
+	seq_timeout = 10
+	tcpflags    = syn
+	command     = /usr/sbin/iptables -A INPUT -s %IP% --dport 22 -j ACCEPT
+
+[closeSSH]
+	sequence    = 9000,8000,7000
+	seq_timeout = 10
+	tcpflags    = syn
+	command     = /usr/sbin/iptables -D INPUT -s %IP% --dport 22 -j ACCEPT
+
+.fi
+.RE
+.TP
+.SH Example #2:
+.RS
+This example uses a single knock to control access to port 22 (SSH).  After receiving
+a successful knock, the daemon will run the \fBstart_command\fP, wait for the time
+specified in \fBcmd_timeout\fP, then execute the \fBstop_command\fP.  This is useful
+to automatically close the door behind a knocker.  The knock sequence uses both UDP
+and TCP ports.
+
+.nf
+[options]
+	logfile = /var/log/knockd.log
+
+[opencloseSSH]
+	sequence      = 2222:udp,3333:tcp,4444:udp
+	seq_timeout   = 15
+	tcpflags      = syn,ack
+	start_command = /usr/sbin/iptables -A INPUT -s %IP% -p tcp --syn -j ACCEPT
+	cmd_timeout   = 5
+	stop_command  = /usr/sbin/iptables -D INPUT -s %IP% -p tcp --syn -j ACCEPT
+
+.fi
+.RE
+.TP
+.SH Example #3:
+.RS
+This example doesn't use a single, fixed knock sequence to trigger an event,
+but a set of sequences taken from a sequence file (one time sequences),
+specified by the \fBone_time_sequences\fP directive.  After each successful
+knock, the used sequence will be invalidated and the next sequence from the
+sequence file has to be used for a successful knock.  This prevents an attacker
+from doing a replay attack after having discovered a sequence (eg, while
+sniffing the network).
+
+.nf
+[options]
+	logfile = /var/log/knockd.log
+
+[opencloseSMTP]
+	one_time_sequences = /etc/knockd/smtp_sequences
+	seq_timeout        = 15
+	tcpflags           = fin,!ack
+	start_command      = /usr/sbin/iptables -A INPUT -s %IP% -p tcp --dport 25 -j ACCEPT
+	cmd_timeout        = 5
+	stop_command       = /usr/sbin/iptables -D INPUT -s %IP% -p tcp --dport 25 -j ACCEPT
+	
+.fi
+.RE
+.SH CONFIGURATION: GLOBAL DIRECTIVES
+.TP
+.B "UseSyslog"
+Log action messages through syslog().  This will insert log entries into your
+/var/log/messages or equivalent.
+.TP
+.B "LogFile = /path/to/file"
+Log actions directly to a file, usually /var/log/knockd.log.
+.TP
+.B "PidFile = /path/to/file"
+Pidfile to use when in daemon mode, default: /var/run/knockd.pid.
+.TP
+.B "Interface = <interface_name>"
+Network interface to listen on. Only its name has to be given, not the path to
+the device (eg, "eth0" and not "/dev/eth0"). Default: eth0.
+.SH CONFIGURATION: KNOCK/EVENT DIRECTIVES
+.TP
+.B "Sequence = <port1>[:<tcp|udp>][,<port2>[:<tcp|udp>] ...]"
+Specify the sequence of ports in the special knock. If a wrong port with
+the same flags is received, the knock is discarded.  Optionally, you can
+define the protocol to be used on a per-port basis (default is TCP).
+.TP
+.B "One_Time_Sequences = /path/to/one_time_sequences_file"
+File containing the one time sequences to be used.  Instead of using a fixed
+sequence, knockd will read the sequence to be used from that file.  After each
+successful knock attempt this sequence will be disabled by writing a '#'
+character at the first position of the line containing the used sequence.  That
+used sequence will then be replaced by the next valid sequence from the file.
+
+Because the first character is replaced by a '#', it is recommended that you
+leave a space at the beginning of each line.  Otherwise the first digit in
+your knock sequence will be overwritten with a '#' after it has been used.
+
+Each line in the one time sequences file contains exactly one sequence and has
+the same format as the one for the \fBSequence\fP directive.  Lines beginning
+with a '#' character will be ignored.
+
+\fBNote\fP: Do not edit the file while knockd is running!
+.TP
+.B "Seq_Timeout = <timeout>"
+Time to wait for a sequence to complete in seconds. If the time elapses
+before the knock is complete, it is discarded.
+.TP
+.B "TCPFlags = fin|syn|rst|psh|ack|urg"
+Only pay attention to packets that have this flag set.  When using TCP flags,
+knockd will IGNORE tcp packets that don't match the flags.  This is different
+than the normal behavior, where an incorrect packet would invalidate the entire
+knock, forcing the client to start over.  Using "TCPFlags = syn" is useful if
+you are testing over an SSH connection, as the SSH traffic will usually
+interfere with (and thus invalidate) the knock.
+
+Separate multiple flags with commas (eg, TCPFlags = syn,ack,urg).  Flags can be
+explicitly excluded by a "!" (eg, TCPFlags = syn,!ack).
+.TP
+.B "Start_Command = <command>"
+Specify the command to be executed when a client makes the correct
+port-knock.  All instances of \fB%IP%\fP will be replaced with the
+knocker's IP address.  The \fBCommand\fP directive is an alias for
+\fBStart_Command\fP.
+.TP
+.B "Cmd_Timeout = <timeout>"
+Time to wait (in seconds) between \fBStart_Command\fP and \fBStop_Command\fP.
+This directive is optional, only required if \fBStop_Command\fP is used.
+.TP
+.B "Stop_Command = <command>"
+Specify the command to be executed when \fBCmd_Timeout\fP seconds have passed 
+since \fBStart_Command\fP has been executed.  All instances of \fB%IP%\fP will
+be replaced with the knocker's IP address.  This directive is optional.
+.SH SECURITY NOTES 
+Using the \fB-l\fP or \fB--lookup\fP commandline option to resolve DNS names
+for log entries may be a security risk!  An attacker may find out the first port
+of a sequence if he can monitor the DNS traffic of the host running knockd.
+Also a host supposed to be stealth (eg, dropping packets to closed TCP ports
+instead of replying with an ACK+RST packet) may give itself away by resolving a
+DNS name if an attacker manages to hit the first (unknown) port of a sequence.
+.SH SEE ALSO
+\fBknock\fP is the accompanying port-knock client, though \fBtelnet\fP or
+\fBnetcat\fP could be used for simple TCP knocks instead.
+For more advanced knocks, see \fBhping\fP, \fBsendip\fP or \fBpackit\fP.
+.SH AUTHOR
+.nf
+Judd Vinet <jvinet@zeroflux.org>
+.fi

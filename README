@@ -28,13 +28,13 @@ can only be accessed after a successful knock sequence.
 4) Client sends four more TCP SYN packets to Server:
       37281, 8529, 40127, 10100
 
-5) Server detects this and runs another iptables to close port 22 to Client.
+5) Server detects this and runs another iptables command to close port 22 to Client.
 
 
 ====================
   KNOCKING CLIENTS
 ====================
-The accompanying knock client is very basic.  If you want to more advanced
+The accompanying knock client is very basic.  If you want to do more advanced
 knocks (eg, setting specific tcp flags) then you should take look at hping,
 sendip or packit.
 

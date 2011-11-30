@@ -967,7 +967,7 @@ void generate_pcap_filter()
 			cleanup(1);
 		}
 		strcpy(door->pcap_filter_exp, buffer);	
-
+		dprint("Adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
 		buffer[0] = '\0';	/* "clear" the buffer */
 	}
 

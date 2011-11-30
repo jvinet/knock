@@ -135,7 +135,7 @@ Network interface to listen on. Only its name has to be given, not the path to
 the device (eg, "eth0" and not "/dev/eth0"). Default: eth0.
 .SH CONFIGURATION: KNOCK/EVENT DIRECTIVES
 .TP
-.B "Sequence = <port1>[:<tcp|udp>][,<port2>[:<tcp|udp>] ...]"
+.B "Sequence = <port1>[:<tcp|udp>],<port2>[:<tcp|udp>][,<port3>[:<tcp|udp>] ...]"
 Specify the sequence of ports in the special knock. If a wrong port with
 the same flags is received, the knock is discarded.  Optionally, you can
 define the protocol to be used on a per-port basis (default is TCP).

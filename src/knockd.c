@@ -42,6 +42,7 @@
 #include <net/if.h>
 #if !defined(__FreeBSD__) && !defined(__APPLE__)
 #include <bits/time.h>
+#include <linux/limits.h>
 #endif
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -161,10 +162,6 @@ int main(int argc, char **argv)
 		{0, 0, 0, 0}
 	};
 	
-	if(parseconfig(o_cfg)) {
-		usage(1);
-	}
-	
 	while((opt = getopt_long(argc, argv, "vDdli:c:p:g:hV", opts, &optidx))) {
 		if(opt < 0) {
 			break;
@@ -191,6 +188,10 @@ int main(int argc, char **argv)
 			case 'h': /* fallthrough */
 			default: usage(0);
 		}
+	}
+
+	if(parseconfig(o_cfg)) {
+		usage(1);
 	}
 
 	/* set o_int to a default value if it has not been set by the -i switch nor by

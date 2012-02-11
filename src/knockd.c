@@ -1064,18 +1064,12 @@ void close_door(opendoor_t *door)
 {
 	doors = list_remove(doors, door);
 	if (door) {
-		if (door->start_command) {
-			free(door->start_command);
-		}
-		if (door->stop_command) {
-			free(door->stop_command);
-		}
+		free(door->start_command);
+		free(door->stop_command);
 		if (door->one_time_sequences_fd) {
 			fclose(door->one_time_sequences_fd);
 		}
-		if (door->pcap_filter_exp) {
-			free(door->pcap_filter_exp);
-		}
+		free(door->pcap_filter_exp);
 		free(door);
 	}
 }

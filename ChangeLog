@@ -1,5 +1,13 @@
 VERSION         DESCRIPTION
 -----------------------------------------------------------------------------
+0.6           - Patches from Oswald Buddenhagen:
+              - Cleanup: Don't null-check before free
+              - Cleanup: Consolidate flag-check logic
+              - Accept single-knock sequences
+              - Introduce a 'target' configuration directive, enabling
+                knockd to react to connect attempts to a target host.
+                Useful in cases where knockd is on a router and you want
+                to send a target a wakeup packet.
 0.5           - Added ability to change the knocking protocol (TCP/UDP) on a
                 per-port basis using the knock client (instead of the -u
                 switch)

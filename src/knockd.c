@@ -73,6 +73,7 @@ typedef struct opendoor {
 	unsigned short seqcount;
 	unsigned short sequence[SEQ_MAX];
 	unsigned short protocol[SEQ_MAX];
+	char *target;
 	time_t seq_timeout;
 	char *start_command;
 	time_t cmd_timeout;
@@ -510,6 +511,7 @@ int parseconfig(char *configfile)
 				}
 				strncpy(door->name, section, sizeof(door->name)-1);
 				door->name[sizeof(door->name)-1] = '\0';
+				door->target = 0;
 				door->seqcount = 0;
 				door->seq_timeout  = SEQ_TIMEOUT; /* default sequence timeout (seconds)  */
 				door->start_command = NULL;
@@ -569,7 +571,15 @@ int parseconfig(char *configfile)
 								linenum, key);
 						return(1);
 					}
-					if(!strcmp(key, "SEQUENCE")) {
+					if(!strcmp(key, "TARGET")) {
+						door->target = malloc(sizeof(char) * (strlen(ptr)+1));
+						if(door->target == NULL) {
+							perror("malloc");
+							exit(1);
+						}
+						strcpy(door->target, ptr);
+						dprint("config: %s: target: %s\n", door->name, door->target);
+					} else if(!strcmp(key, "SEQUENCE")) {
 						int i;
 						i = parse_port_sequence(ptr, door);
 						if (i > 0) {
@@ -804,19 +814,17 @@ long get_current_one_time_sequence_position(opendoor_t *door)
  */
 void generate_pcap_filter()
 {
-	/* NOTE: We're doing string manipulations in a daemon -- use defensive programming! */
-		
 	PMList *lp;
 	opendoor_t *door;
-	char *buffer = NULL;			/* temporary buffer to create the individual filter strings */ 
-	size_t bufsize = 0;			/* size of buffer */
-	char port_str[10];			/* used by snprintf to convert unsigned short --> string */
-	short head_set = 0;			/* flag indicating if protocol head is set (i.e. "((tcp dst port") */
-	short tcp_present = 0;			/* flag indicating if TCP is used */
-	short udp_present = 0;			/* flag indicating if UDP is used */
+	char *buffer = NULL;   /* temporary buffer to create the individual filter strings */ 
+	size_t bufsize = 0;    /* size of buffer */
+	char port_str[10];     /* used by snprintf to convert unsigned short --> string */
+	short head_set = 0;	   /* flag indicating if protocol head is set (i.e. "((tcp dst port") */
+	short tcp_present = 0; /* flag indicating if TCP is used */
+	short udp_present = 0; /* flag indicating if UDP is used */
 	unsigned int i;
-	short modified_filters = 0;		/* flag indicating if at least one filter has changed --> recompile the filter */
-	struct bpf_program bpf_prog;		/* compiled BPF filter program */
+	short modified_filters = 0;  /* flag indicating if at least one filter has changed --> recompile the filter */
+	struct bpf_program bpf_prog; /* compiled BPF filter program */
 	
 	/* generate subfilters for each door having a NULL pcap_filter_exp
 	 *
@@ -850,6 +858,10 @@ void generate_pcap_filter()
 			}
 			buffer[0] = '\0';
 		}
+
+		bufsize = realloc_strcat(&buffer, "(dst host ", bufsize);	/* accept only incoming packets */
+		bufsize = realloc_strcat(&buffer, door->target ? door->target : myip, bufsize);
+		bufsize = realloc_strcat(&buffer, " and (", bufsize);
 
 		/* generate filter for all TCP ports (i.e. "((tcp dst port 4000 or 4001 or 4002) and tcp[tcpflags] & tcp-syn != 0)" */
 		for(i = 0; i < door->seqcount; i++) {
@@ -949,6 +961,8 @@ void generate_pcap_filter()
 		if(udp_present) {
 			bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of UDP ports */
 		}
+
+		bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parantheses around port filters */
 		
 		/* test if in any of the precedent calls to realloc_strcat() failed. We can do this safely here because
 		 * realloc_strcat() returns 0 on failure and if a buffer size of 0 is passed to it, the function does
@@ -985,9 +999,6 @@ void generate_pcap_filter()
 	 * )
 	 */
 	if(modified_filters) {
-		bufsize = realloc_strcat(&buffer, "dst host ", bufsize);	/* accept only incoming packets */
-		bufsize = realloc_strcat(&buffer, myip, bufsize);
-		bufsize = realloc_strcat(&buffer, " and (", bufsize);
 		/* iterate over all doors */
 		for(lp = doors; lp; lp = lp->next) {
 			door = (opendoor_t*)lp->data;
@@ -996,7 +1007,6 @@ void generate_pcap_filter()
 				bufsize = realloc_strcat(&buffer, " or ", bufsize);
 			}
 		}
-		bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parantheses around port filters */
 
 		/* test if in any of the precedent calls to realloc_strcat() failed. See above why this is ok to do this only
 		 * at this point */
@@ -1063,7 +1073,8 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 void close_door(opendoor_t *door)
 {
 	doors = list_remove(doors, door);
-	if (door) {
+	if(door) {
+		free(door->target);
 		free(door->start_command);
 		free(door->stop_command);
 		if (door->one_time_sequences_fd) {
@@ -1490,22 +1501,6 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		return;
 	}
 
-	/* make sure this packet was sent TO us, not FROM us or THROUGH us.
-	 * Actually the pcap filter will take care of forwarding only packets
-	 * destined for us, but another check won't hurt... */
-	if(inet_aton(myip, &inaddr) == 0) {
-		fprintf(stderr, "error: could not understand IP address: %s\n", myip);
-		return;
-	}
-#if defined(__FreeBSD__) || defined(__APPLE__)
-	if(ip->ip_dst.s_addr != inaddr.s_addr) {
-#else
-	if(ip->daddr != inaddr.s_addr) {
-#endif	
-		dprint("packet destined for another host, ignoring...\n");
-		return;
-	}
-	
 	sport = dport = 0;
 
 #if defined(__FreeBSD__) || defined(__APPLE__)
@@ -1602,8 +1597,10 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	attempt = NULL;
 	/* look for this guy in our attempts list */
 	for(lp = attempts; lp; lp = lp->next) {
-		if(!strncmp(((knocker_t*)lp->data)->src, srcIP, sizeof(srcIP))) {
-			attempt = (knocker_t*)lp->data;
+		knocker_t *att = (knocker_t*)lp->data;
+		if(!strncmp(att->src, srcIP, sizeof(srcIP)) &&
+		   !strncmp(att->door->target ? att->door->target : myip, dstIP, sizeof(dstIP))) {
+			attempt = att;
 			break;
 		}
 	}
@@ -1637,9 +1634,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				continue;
 			}
 #if defined(__FreeBSD__) || defined(__APPLE__)
-			if(ip->ip_p == door->protocol[0] && dport == door->sequence[0]) {			
+			if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
+			   !strcmp(dstIP, door->target ? door->target : myip)) {
 #else
-			if(ip->protocol == door->protocol[0] && dport == door->sequence[0]) {
+			if(ip->protocol == door->protocol[0] && dport == door->sequence[0] &&
+			   !strcmp(dstIP, door->target ? door->target : myip)) {
 #endif
 				struct hostent *he;
 				/* create a new entry */

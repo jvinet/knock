@@ -1,7 +1,7 @@
 /*
  *  knockd.c
  * 
- *  Copyright (c) 2004-2005 by Judd Vinet <jvinet@zeroflux.org>
+ *  Copyright (c) 2004-2012 by Judd Vinet <jvinet@zeroflux.org>
  * 
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -429,7 +429,7 @@ void usage(int exit_code) {
 
 void ver() {
 	printf("knockd %s\n", version);
-	printf("Copyright (C) 2004-2005 Judd Vinet <jvinet@zeroflux.org>\n");
+	printf("Copyright (C) 2004-2012 Judd Vinet <jvinet@zeroflux.org>\n");
 	exit(0);
 }
 

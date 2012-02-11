@@ -1190,6 +1190,151 @@ int exec_cmd(char* command, char* name){
 	return ret;
 }
 
+/*
+ * If examining a TCP packet, try to match flags against those in
+ * the door config.
+ */
+#if defined(__FreeBSD__) || defined(__APPLE__)		 
+int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
+{
+	/* if tcp, check the flags to ignore the packets we don't want
+	 * (don't even use it to cancel sequences)
+	 */
+	if(ip->ip_p == IPPROTO_TCP) {
+		if(door->flag_fin != DONT_CARE) {
+			if(door->flag_fin == SET && !(tcp->th_flags & TH_FIN)) {
+				dprint("packet is not FIN, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_fin == NOT_SET && (tcp->th_flags & TH_FIN)) {
+				dprint("packet is not !FIN, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_syn != DONT_CARE) {
+			if(door->flag_syn == SET && !(tcp->th_flags & TH_SYN)) {
+				dprint("packet is not SYN, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_syn == NOT_SET && (tcp->th_flags & TH_SYN)) {
+				dprint("packet is not !SYN, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_rst != DONT_CARE) {
+			if(door->flag_rst == SET && !(tcp->th_flags & TH_RST)) {
+				dprint("packet is not RST, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_rst == NOT_SET && (tcp->th_flags & TH_RST)) {
+				dprint("packet is not !RST, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_psh != DONT_CARE) {
+			if(door->flag_psh == SET && !(tcp->th_flags & TH_PUSH)) {
+				dprint("packet is not PSH, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_psh == NOT_SET && (tcp->th_flags & TH_PUSH)) {
+				dprint("packet is not !PSH, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_ack != DONT_CARE) {
+			if(door->flag_ack == SET && !(tcp->th_flags & TH_ACK)) {
+				dprint("packet is not ACK, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_ack == NOT_SET && !(tcp->th_flags & TH_ACK)) {
+				dprint("packet is not !ACK, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_urg != DONT_CARE) {
+			if(door->flag_urg == SET && !(tcp->th_flags & TH_URG)) {
+				dprint("packet is not URG, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_urg == NOT_SET && !(tcp->th_flags & TH_URG)) {
+				dprint("packet is not !URG, ignoring...\n");
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+#else
+int flags_match(opendoor_t* door, struct iphdr* ip, struct tcphdr* tcp)
+{
+	/* if tcp, check the flags to ignore the packets we don't want
+	 * (don't even use it to cancel sequences)
+	 */
+	if(ip->protocol == IPPROTO_TCP) {
+		if(door->flag_fin != DONT_CARE) {
+			if(door->flag_fin == SET && tcp->fin != 1) {
+				dprint("packet is not FIN, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_fin == NOT_SET && tcp->fin == 1) {
+				dprint("packet is not !FIN, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_syn != DONT_CARE) {
+			if(door->flag_syn == SET && tcp->syn != 1) {
+				dprint("packet is not SYN, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_syn == NOT_SET && tcp->syn == 1) {
+				dprint("packet is not !SYN, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_rst != DONT_CARE) {
+			if(door->flag_rst == SET && tcp->rst != 1) {
+				dprint("packet is not RST, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_rst == NOT_SET && tcp->rst == 1) {
+				dprint("packet is not !RST, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_psh != DONT_CARE) {
+			if(door->flag_psh == SET && tcp->psh != 1) {
+				dprint("packet is not PSH, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_psh == NOT_SET && tcp->psh == 1) {
+				dprint("packet is not !PSH, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_ack != DONT_CARE) {
+			if(door->flag_ack == SET && tcp->ack != 1) {
+				dprint("packet is not ACK, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_ack == NOT_SET && tcp->ack == 1) {
+				dprint("packet is not !ACK, ignoring...\n");
+				return 0;
+			}
+		}
+		if(door->flag_urg != DONT_CARE) {
+			if(door->flag_urg == SET && tcp->urg != 1) {
+				dprint("packet is not URG, ignoring...\n");
+				return 0;
+			}
+			if(door->flag_urg == NOT_SET && tcp->urg == 1) {
+				dprint("packet is not !URG, ignoring...\n");
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+#endif				
 
 /* Sniff an interface, looking for port-knock sequences
  */
@@ -1380,139 +1525,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	}
 
 	if(attempt) {
-		int flagsmatch = 1;
-		/* if tcp, check the flags to ignore the packets we don't want
-		 * (don't even use it to cancel sequences)
-		 */
+		int flagsmatch = flags_match(attempt->door, ip, tcp);
 #if defined(__FreeBSD__) || defined(__APPLE__)		 
-		if(ip->ip_p == IPPROTO_TCP) {
-			if(attempt->door->flag_fin != DONT_CARE) {
-				if(attempt->door->flag_fin == SET && !(tcp->th_flags & TH_FIN)) {
-					dprint("packet is not FIN, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_fin == NOT_SET && (tcp->th_flags & TH_FIN)) {
-					dprint("packet is not !FIN, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_syn != DONT_CARE) {
-				if(attempt->door->flag_syn == SET && !(tcp->th_flags & TH_SYN)) {
-					dprint("packet is not SYN, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_syn == NOT_SET && (tcp->th_flags & TH_SYN)) {
-					dprint("packet is not !SYN, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_rst != DONT_CARE) {
-				if(attempt->door->flag_rst == SET && !(tcp->th_flags & TH_RST)) {
-					dprint("packet is not RST, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_rst == NOT_SET && (tcp->th_flags & TH_RST)) {
-					dprint("packet is not !RST, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_psh != DONT_CARE) {
-				if(attempt->door->flag_psh == SET && !(tcp->th_flags & TH_PUSH)) {
-					dprint("packet is not PSH, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_psh == NOT_SET && (tcp->th_flags & TH_PUSH)) {
-					dprint("packet is not !PSH, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_ack != DONT_CARE) {
-				if(attempt->door->flag_ack == SET && !(tcp->th_flags & TH_ACK)) {
-					dprint("packet is not ACK, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_ack == NOT_SET && !(tcp->th_flags & TH_ACK)) {
-					dprint("packet is not !ACK, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_urg != DONT_CARE) {
-				if(attempt->door->flag_urg == SET && !(tcp->th_flags & TH_URG)) {
-					dprint("packet is not URG, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_urg == NOT_SET && !(tcp->th_flags & TH_URG)) {
-					dprint("packet is not !URG, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-		}
 		if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
 				dport == attempt->door->sequence[attempt->stage]) {
-
 #else
-		if(ip->protocol == IPPROTO_TCP) {
-			if(attempt->door->flag_fin != DONT_CARE) {
-				if(attempt->door->flag_fin == SET && tcp->fin != 1) {
-					dprint("packet is not FIN, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_fin == NOT_SET && tcp->fin == 1) {
-					dprint("packet is not !FIN, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_syn != DONT_CARE) {
-				if(attempt->door->flag_syn == SET && tcp->syn != 1) {
-					dprint("packet is not SYN, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_syn == NOT_SET && tcp->syn == 1) {
-					dprint("packet is not !SYN, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_rst != DONT_CARE) {
-				if(attempt->door->flag_rst == SET && tcp->rst != 1) {
-					dprint("packet is not RST, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_rst == NOT_SET && tcp->rst == 1) {
-					dprint("packet is not !RST, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_psh != DONT_CARE) {
-				if(attempt->door->flag_psh == SET && tcp->psh != 1) {
-					dprint("packet is not PSH, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_psh == NOT_SET && tcp->psh == 1) {
-					dprint("packet is not !PSH, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_ack != DONT_CARE) {
-				if(attempt->door->flag_ack == SET && tcp->ack != 1) {
-					dprint("packet is not ACK, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_ack == NOT_SET && tcp->ack == 1) {
-					dprint("packet is not !ACK, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-			if(attempt->door->flag_urg != DONT_CARE) {
-				if(attempt->door->flag_urg == SET && tcp->urg != 1) {
-					dprint("packet is not URG, ignoring...\n");
-					flagsmatch = 0;
-				}
-				if(attempt->door->flag_urg == NOT_SET && tcp->urg == 1) {
-					dprint("packet is not !URG, ignoring...\n");
-					flagsmatch = 0;
-				}
-			}
-		}
 		if(flagsmatch && ip->protocol == attempt->door->protocol[attempt->stage] &&
 				dport == attempt->door->sequence[attempt->stage]) {
 #endif				
@@ -1606,63 +1623,12 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		for(lp = doors; lp; lp = lp->next) {
 			opendoor_t *door = (opendoor_t*)lp->data;
 			/* if we're working with TCP, try to match the flags */
-#if defined(__FreeBSD__) || defined(__APPLE__)
-			if(ip->ip_p == IPPROTO_TCP){
-				if(door->flag_fin != DONT_CARE) {
-					if(door->flag_fin == SET && !(tcp->th_flags & TH_FIN)) {dprint("packet is not FIN, ignoring...\n");continue;}
-					if(door->flag_fin == NOT_SET && (tcp->th_flags & TH_FIN)) {dprint("packet is not !FIN, ignoring...\n");continue;}
-				}
-				if(door->flag_syn != DONT_CARE) {
-					if(door->flag_syn == SET && !(tcp->th_flags & TH_SYN)) {dprint("packet is not SYN, ignoring...\n");continue;}
-					if(door->flag_syn == NOT_SET && (tcp->th_flags & TH_SYN)) {dprint("packet is not !SYN, ignoring...\n");continue;}
-				}
-				if(door->flag_rst != DONT_CARE) {
-					if(door->flag_rst == SET && !(tcp->th_flags & TH_RST)) {dprint("packet is not RST, ignoring...\n");continue;}
-					if(door->flag_rst == NOT_SET && (tcp->th_flags & TH_RST)) {dprint("packet is not !RST, ignoring...\n");continue;}
-				}
-				if(door->flag_psh != DONT_CARE) {
-					if(door->flag_psh == SET && !(tcp->th_flags & TH_PUSH)) {dprint("packet is not PSH, ignoring...\n");continue;}
-					if(door->flag_psh == NOT_SET && (tcp->th_flags & TH_PUSH)) {dprint("packet is not !PSH, ignoring...\n");continue;}
-				}
-				if(door->flag_ack != DONT_CARE) {
-					if(door->flag_ack == SET && !(tcp->th_flags & TH_ACK)) {dprint("packet is not ACK, ignoring...\n");continue;}
-					if(door->flag_ack == NOT_SET && (tcp->th_flags & TH_ACK)) {dprint("packet is not !ACK, ignoring...\n");continue;}
-				}
-				if(door->flag_urg != DONT_CARE) {
-					if(door->flag_urg == SET && !(tcp->th_flags & TH_URG)) {dprint("packet is not URG, ignoring...\n");continue;}
-					if(door->flag_urg == NOT_SET && (tcp->th_flags & TH_URG)) {dprint("packet is not !URG, ignoring...\n");continue;}
-				}
+			if(!flags_match(door, ip, tcp)) {
+				continue;
 			}
-
+#if defined(__FreeBSD__) || defined(__APPLE__)
 			if(ip->ip_p == door->protocol[0] && dport == door->sequence[0]) {			
 #else
-			if(ip->protocol == IPPROTO_TCP){
-				if(door->flag_fin != DONT_CARE) {
-					if(door->flag_fin == SET && tcp->fin != 1) {dprint("packet is not FIN, ignoring...\n");continue;}
-					if(door->flag_fin == NOT_SET && tcp->fin == 1) {dprint("packet is not !FIN, ignoring...\n");continue;}
-				}
-				if(door->flag_syn != DONT_CARE) {
-					if(door->flag_syn == SET && tcp->syn != 1) {dprint("packet is not SYN, ignoring...\n");continue;}
-					if(door->flag_syn == NOT_SET && tcp->syn == 1) {dprint("packet is not !SYN, ignoring...\n");continue;}
-				}
-				if(door->flag_rst != DONT_CARE) {
-					if(door->flag_rst == SET && tcp->rst != 1) {dprint("packet is not RST, ignoring...\n");continue;}
-					if(door->flag_rst == NOT_SET && tcp->rst == 1) {dprint("packet is not !RST, ignoring...\n");continue;}
-				}
-				if(door->flag_psh != DONT_CARE) {
-					if(door->flag_psh == SET && tcp->psh != 1) {dprint("packet is not PSH, ignoring...\n");continue;}
-					if(door->flag_psh == NOT_SET && tcp->psh == 1) {dprint("packet is not !PSH, ignoring...\n");continue;}
-				}
-				if(door->flag_ack != DONT_CARE) {
-					if(door->flag_ack == SET && tcp->ack != 1) {dprint("packet is not ACK, ignoring...\n");continue;}
-					if(door->flag_ack == NOT_SET && tcp->ack == 1) {dprint("packet is not !ACK, ignoring...\n");continue;}
-				}
-				if(door->flag_urg != DONT_CARE) {
-					if(door->flag_urg == SET && tcp->urg != 1) {dprint("packet is not URG, ignoring...\n");continue;}
-					if(door->flag_urg == NOT_SET && tcp->urg == 1) {dprint("packet is not !URG, ignoring...\n");continue;}
-				}
-			}
-
 			if(ip->protocol == door->protocol[0] && dport == door->sequence[0]) {
 #endif
 				struct hostent *he;

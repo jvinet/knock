@@ -1336,6 +1336,90 @@ int flags_match(opendoor_t* door, struct iphdr* ip, struct tcphdr* tcp)
 }
 #endif				
 
+/**
+ * Process a knock attempt to see if the knocker has graduated to the next
+ * sequence. If they've completed all sequences correctly, then we open the
+ * door.
+ */
+void process_attempt(knocker_t *attempt)
+{
+	/* level up! */
+	attempt->stage++;
+	if(attempt->srchost) {
+		vprint("%s (%s): %s: Stage %d\n", attempt->src, attempt->srchost, attempt->door->name, attempt->stage);
+		logprint("%s (%s): %s: Stage %d", attempt->src, attempt->srchost, attempt->door->name, attempt->stage);
+	} else {
+		vprint("%s: %s: Stage %d\n", attempt->src, attempt->door->name, attempt->stage);
+		logprint("%s: %s: Stage %d", attempt->src, attempt->door->name, attempt->stage);
+	}
+	if(attempt->stage >= attempt->door->seqcount) {
+		if(attempt->srchost) {
+			vprint("%s (%s): %s: OPEN SESAME\n", attempt->src, attempt->srchost, attempt->door->name);
+			logprint("%s (%s): %s: OPEN SESAME", attempt->src, attempt->srchost, attempt->door->name);
+		} else {
+			vprint("%s: %s: OPEN SESAME\n", attempt->src, attempt->door->name);
+			logprint("%s: %s: OPEN SESAME", attempt->src, attempt->door->name);
+		}
+		if(attempt->door->start_command && strlen(attempt->door->start_command)) {
+			/* run the associated command */
+			if(fork() == 0) {
+				/* child */
+				char parsed_start_cmd[PATH_MAX];
+				char parsed_stop_cmd[PATH_MAX];
+				size_t cmd_len = 0;
+
+				setsid();
+
+				/* parse start and stop command and check if the parsed commands fit in the given buffer. Don't
+				 * execute any command if one of them has been truncated */
+				cmd_len = parse_cmd(parsed_start_cmd, sizeof(parsed_start_cmd), attempt->door->start_command, attempt->src);
+				if(cmd_len >= sizeof(parsed_start_cmd)) {	/* command has been truncated --> do NOT execute it */
+					fprintf(stderr, "error: parsed start command has been truncated! --> won't execute it\n");
+					logprint("error: parsed start command has been truncated! --> won't execute it");
+					exit(0); /* exit child */
+				}
+				if(attempt->door->stop_command) {
+					cmd_len = parse_cmd(parsed_stop_cmd, sizeof(parsed_stop_cmd), attempt->door->stop_command, attempt->src);
+					if(cmd_len >= sizeof(parsed_stop_cmd)) {	/* command has been truncated --> do NOT execute it */
+						fprintf(stderr, "error: parsed stop command has been truncated! --> won't execute start command\n");
+						logprint("error: parsed stop command has been truncated! --> won't execute start command");
+						exit(0); /* exit child */
+					}
+				}
+
+				/* all parsing ok --> execute the parsed (%IP% = source IP) command */
+				exec_cmd(parsed_start_cmd, attempt->door->name);
+				/* if stop_command is set, sleep for cmd_timeout and run it*/
+				if(attempt->door->stop_command){
+					sleep(attempt->door->cmd_timeout);
+					if(attempt->srchost) {
+						vprint("%s (%s): %s: command timeout\n", attempt->src, attempt->srchost, attempt->door->name);
+						logprint("%s (%s): %s: command timeout", attempt->src, attempt->srchost, attempt->door->name);
+					} else {
+						vprint("%s: %s: command timeout\n", attempt->src, attempt->door->name);
+						logprint("%s: %s: command timeout", attempt->src, attempt->door->name);
+					}
+					exec_cmd(parsed_stop_cmd, attempt->door->name);
+				}
+
+				exit(0); /* exit child */
+			}
+		}
+		/* change to next sequence if one time sequences are used.
+		 * Note that here the door will eventually be closed in
+		 * get_new_one_time_sequence() if no more sequences are left */
+		if(attempt->door->one_time_sequences_fd) {
+			disable_used_one_time_sequence(attempt->door);
+			get_new_one_time_sequence(attempt->door);
+
+			/* update pcap filter */
+			free(attempt->door->pcap_filter_exp);
+			attempt->door->pcap_filter_exp = NULL;
+			generate_pcap_filter();
+		}
+	}
+}
+
 /* Sniff an interface, looking for port-knock sequences
  */
 void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
@@ -1533,81 +1617,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		if(flagsmatch && ip->protocol == attempt->door->protocol[attempt->stage] &&
 				dport == attempt->door->sequence[attempt->stage]) {
 #endif				
-			/* level up! */
-			attempt->stage++;
-			if(attempt->srchost) {
-				vprint("%s (%s): %s: Stage %d\n", attempt->src, attempt->srchost, attempt->door->name, attempt->stage);
-				logprint("%s (%s): %s: Stage %d", attempt->src, attempt->srchost, attempt->door->name, attempt->stage);
-			} else {
-				vprint("%s: %s: Stage %d\n", attempt->src, attempt->door->name, attempt->stage);
-				logprint("%s: %s: Stage %d", attempt->src, attempt->door->name, attempt->stage);
-			}
-			if(attempt->stage >= attempt->door->seqcount) {
-				if(attempt->srchost) {
-					vprint("%s (%s): %s: OPEN SESAME\n", attempt->src, attempt->srchost, attempt->door->name);
-					logprint("%s (%s): %s: OPEN SESAME", attempt->src, attempt->srchost, attempt->door->name);
-				} else {
-					vprint("%s: %s: OPEN SESAME\n", attempt->src, attempt->door->name);
-					logprint("%s: %s: OPEN SESAME", attempt->src, attempt->door->name);
-				}
-				if(attempt->door->start_command && strlen(attempt->door->start_command)) {
-					/* run the associated command */
-					if(fork() == 0) {
-						/* child */
-						char parsed_start_cmd[PATH_MAX];
-						char parsed_stop_cmd[PATH_MAX];
-						size_t cmd_len = 0;
-
-						setsid();
-						
-						/* parse start and stop command and check if the parsed commands fit in the given buffer. Don't
-						 * execute any command if one of them has been truncated */
-						cmd_len = parse_cmd(parsed_start_cmd, sizeof(parsed_start_cmd), attempt->door->start_command, attempt->src);
-						if(cmd_len >= sizeof(parsed_start_cmd)) {	/* command has been truncated --> do NOT execute it */
-							fprintf(stderr, "error: parsed start command has been truncated! --> won't execute it\n");
-							logprint("error: parsed start command has been truncated! --> won't execute it");
-							exit(0); /* exit child */
-						}
-						if(attempt->door->stop_command) {
-							cmd_len = parse_cmd(parsed_stop_cmd, sizeof(parsed_stop_cmd), attempt->door->stop_command, attempt->src);
-							if(cmd_len >= sizeof(parsed_stop_cmd)) {	/* command has been truncated --> do NOT execute it */
-								fprintf(stderr, "error: parsed stop command has been truncated! --> won't execute start command\n");
-								logprint("error: parsed stop command has been truncated! --> won't execute start command");
-								exit(0); /* exit child */
-							}
-						}
-
-						/* all parsing ok --> execute the parsed (%IP% = source IP) command */
-						exec_cmd(parsed_start_cmd, attempt->door->name);
-						/* if stop_command is set, sleep for cmd_timeout and run it*/
-						if(attempt->door->stop_command){
-							sleep(attempt->door->cmd_timeout);
-							if(attempt->srchost) {
-								vprint("%s (%s): %s: command timeout\n", attempt->src, attempt->srchost, attempt->door->name);
-								logprint("%s (%s): %s: command timeout", attempt->src, attempt->srchost, attempt->door->name);
-							} else {
-								vprint("%s: %s: command timeout\n", attempt->src, attempt->door->name);
-								logprint("%s: %s: command timeout", attempt->src, attempt->door->name);
-							}
-							exec_cmd(parsed_stop_cmd, attempt->door->name);
-						}
-						
-						exit(0); /* exit child */
-					}
-				}
-				/* change to next sequence if one time sequences are used.
-				 * Note that here the door will eventually be closed in
-				 * get_new_one_time_sequence() if no more sequences are left */
-				if(attempt->door->one_time_sequences_fd) {
-					disable_used_one_time_sequence(attempt->door);
-					get_new_one_time_sequence(attempt->door);
-
-					/* update pcap filter */
-					free(attempt->door->pcap_filter_exp);
-					attempt->door->pcap_filter_exp = NULL;
-					generate_pcap_filter();
-				}
-			}
+			process_attempt(attempt);
 		} else if(flagsmatch == 0) {
 			/* TCP flags didn't match -- just ignore this packet, don't
 			 * invalidate the knock.
@@ -1653,7 +1663,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					}
 				}
 
-				attempt->stage = 1;
+				attempt->stage = 0;
 				attempt->seq_start = pkt_secs;
 				attempt->door = door;
 				if(attempt->srchost) {
@@ -1664,6 +1674,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					logprint("%s: %s: Stage 1", attempt->src, door->name);
 				}
 				attempts = list_add(attempts, attempt);
+				process_attempt(attempt);
 			}
 		}
 	}

@@ -1374,8 +1374,10 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		}
 		
 		ip = (struct ip*)(packet + sizeof(struct ether_header));
+#ifdef __linux__
 	} else if(lltype == DLT_LINUX_SLL) {
 		ip = (struct ip*)((u_char*)packet + 16);
+#endif
 	} else if(lltype == DLT_RAW) {
 		ip = (struct ip*)((u_char*)packet);
 	} else {

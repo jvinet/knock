@@ -1378,6 +1378,9 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		ip = (struct ip*)((u_char*)packet + 16);
 	} else if(lltype == DLT_RAW) {
 		ip = (struct ip*)((u_char*)packet);
+	} else {
+		dprint("link layer header type of packet not recognized, ignoring...\n");
+		return;
 	}
 
 	if(ip->ip_v != 4) {

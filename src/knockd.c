@@ -28,11 +28,9 @@
 #include <ctype.h>
 #include <string.h>
 #include <fcntl.h>
-#if defined(__FreeBSD__) || defined(__APPLE__)
 #include <limits.h>
 #include <sys/socket.h>
 #include <netinet/in_systm.h>
-#endif
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
@@ -40,10 +38,6 @@
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <net/if.h>
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
-#include <bits/time.h>
-#include <linux/limits.h>
-#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
@@ -211,11 +205,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-#if defined(__FreeBSD__) || defined(__APPLE__)
 	cap = pcap_open_live(o_int, 65535, 0, 1, pcapErr);
-#else
-	cap = pcap_open_live(o_int, 65535, 0, 0, pcapErr);
-#endif	
 	if(strlen(pcapErr)) {
 		fprintf(stderr, "could not open %s: %s\n", o_int, pcapErr);
 	}
@@ -1100,11 +1090,7 @@ char* get_ip(const char* iface, char *buf, int bufsize)
 	}
 	buf[0] = '\0';
 
-#if defined(__FreeBSD__) || defined(__APPLE__)
 	s = socket(AF_INET, SOCK_DGRAM, 0);
-#else
-	s = socket(PF_PACKET, SOCK_DGRAM, 0);
-#endif
 	if(s < 0) {
 		return(NULL);
 	}
@@ -1205,7 +1191,6 @@ int exec_cmd(char* command, char* name){
  * If examining a TCP packet, try to match flags against those in
  * the door config.
  */
-#if defined(__FreeBSD__) || defined(__APPLE__)		 
 int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
 {
 	/* if tcp, check the flags to ignore the packets we don't want
@@ -1275,77 +1260,6 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
 	}
 	return 1;
 }
-#else
-int flags_match(opendoor_t* door, struct iphdr* ip, struct tcphdr* tcp)
-{
-	/* if tcp, check the flags to ignore the packets we don't want
-	 * (don't even use it to cancel sequences)
-	 */
-	if(ip->protocol == IPPROTO_TCP) {
-		if(door->flag_fin != DONT_CARE) {
-			if(door->flag_fin == SET && tcp->fin != 1) {
-				dprint("packet is not FIN, ignoring...\n");
-				return 0;
-			}
-			if(door->flag_fin == NOT_SET && tcp->fin == 1) {
-				dprint("packet is not !FIN, ignoring...\n");
-				return 0;
-			}
-		}
-		if(door->flag_syn != DONT_CARE) {
-			if(door->flag_syn == SET && tcp->syn != 1) {
-				dprint("packet is not SYN, ignoring...\n");
-				return 0;
-			}
-			if(door->flag_syn == NOT_SET && tcp->syn == 1) {
-				dprint("packet is not !SYN, ignoring...\n");
-				return 0;
-			}
-		}
-		if(door->flag_rst != DONT_CARE) {
-			if(door->flag_rst == SET && tcp->rst != 1) {
-				dprint("packet is not RST, ignoring...\n");
-				return 0;
-			}
-			if(door->flag_rst == NOT_SET && tcp->rst == 1) {
-				dprint("packet is not !RST, ignoring...\n");
-				return 0;
-			}
-		}
-		if(door->flag_psh != DONT_CARE) {
-			if(door->flag_psh == SET && tcp->psh != 1) {
-				dprint("packet is not PSH, ignoring...\n");
-				return 0;
-			}
-			if(door->flag_psh == NOT_SET && tcp->psh == 1) {
-				dprint("packet is not !PSH, ignoring...\n");
-				return 0;
-			}
-		}
-		if(door->flag_ack != DONT_CARE) {
-			if(door->flag_ack == SET && tcp->ack != 1) {
-				dprint("packet is not ACK, ignoring...\n");
-				return 0;
-			}
-			if(door->flag_ack == NOT_SET && tcp->ack == 1) {
-				dprint("packet is not !ACK, ignoring...\n");
-				return 0;
-			}
-		}
-		if(door->flag_urg != DONT_CARE) {
-			if(door->flag_urg == SET && tcp->urg != 1) {
-				dprint("packet is not URG, ignoring...\n");
-				return 0;
-			}
-			if(door->flag_urg == NOT_SET && tcp->urg == 1) {
-				dprint("packet is not !URG, ignoring...\n");
-				return 0;
-			}
-		}
-	}
-	return 1;
-}
-#endif				
 
 /**
  * Process a knock attempt to see if the knocker has graduated to the next
@@ -1436,13 +1350,8 @@ void process_attempt(knocker_t *attempt)
 void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 {
 	/* packet structs */
-#if defined(__FreeBSD__) || defined(__APPLE__)
 	struct ether_header* eth = NULL;
 	struct ip* ip = NULL;
-#else
-	struct ethhdr* eth = NULL;
-	struct iphdr* ip   = NULL;
-#endif	
 	struct tcphdr* tcp = NULL;
 	struct udphdr* udp = NULL;
 	char proto[8];
@@ -1459,51 +1368,35 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	knocker_t *attempt = NULL;
 
 	if(lltype == DLT_EN10MB) {
-#if defined(__FreeBSD__) || defined(__APPLE__)		
 		eth = (struct ether_header*)packet;
 		if(ntohs(eth->ether_type) != ETHERTYPE_IP) {
 			return;
 		}
 		
 		ip = (struct ip*)(packet + sizeof(struct ether_header));
+#ifdef __linux__
 	} else if(lltype == DLT_LINUX_SLL) {
 		ip = (struct ip*)((u_char*)packet + 16);
+#endif
 	} else if(lltype == DLT_RAW) {
 		ip = (struct ip*)((u_char*)packet);
+	} else {
+		dprint("link layer header type of packet not recognized, ignoring...\n");
+		return;
 	}
 
 	if(ip->ip_v != 4) {
-#else
-		eth = (struct ethhdr*)packet;
-		if(ntohs(eth->h_proto) != ETH_P_IP) {
-			return;
-		}
-
-		ip = (struct iphdr*)(packet + sizeof(struct ethhdr));
-	} else if(lltype == DLT_LINUX_SLL) {
-		ip = (struct iphdr*)((u_char*)packet + 16);
-	} else if(lltype == DLT_RAW) {
-		ip = (struct iphdr*)((u_char*)packet);
-	}
-
-	if(ip->version != 4) {
-#endif	
 		/* no IPv6 yet */
 		dprint("packet is not IPv4, ignoring...\n");
 		return;
 	}
-#if defined(__FreeBSD__) || defined(__APPLE__)
 	if(ip->ip_p == IPPROTO_ICMP) {
-#else
-	if(ip->protocol == IPPROTO_ICMP) {
-#endif	
 		/* we don't do ICMP */
 		return;
 	}
 
 	sport = dport = 0;
 
-#if defined(__FreeBSD__) || defined(__APPLE__)
 	if(ip->ip_p == IPPROTO_TCP) {
 		strncpy(proto, "tcp", sizeof(proto));
 		tcp = (struct tcphdr*)((u_char*)ip + (ip->ip_hl *4));
@@ -1515,19 +1408,6 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		udp = (struct udphdr*)((u_char*)ip + (ip->ip_hl * 4));
 		sport = ntohs(udp->uh_sport);
 		dport = ntohs(udp->uh_dport);
-#else
-	if(ip->protocol == IPPROTO_TCP) {
-		strncpy(proto, "tcp", sizeof(proto));
-		tcp = (struct tcphdr*)((u_char*)ip + (ip->ihl * 4));		
-		sport = ntohs(tcp->source);
-		dport = ntohs(tcp->dest);
-	}
-	if(ip->protocol == IPPROTO_UDP) {
-		strncpy(proto, "udp", sizeof(proto));
-		udp = (struct udphdr*)((u_char*)ip + (ip->ihl * 4));
-		sport = ntohs(udp->source);
-		dport = ntohs(udp->dest);
-#endif
 	}
 
 	/* get the date/time */
@@ -1538,17 +1418,10 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			pkt_tm->tm_sec);
 
 	/* convert IPs from binary to string */
-#if defined(__FreeBSD__) || defined(__APPLE__)	
 	inaddr.s_addr = ip->ip_src.s_addr;
 	strncpy(srcIP, inet_ntoa(inaddr), sizeof(srcIP)-1);
 	srcIP[sizeof(srcIP)-1] = '\0';
 	inaddr.s_addr = ip->ip_dst.s_addr;
-#else
-	inaddr.s_addr = ip->saddr;
-	strncpy(srcIP, inet_ntoa(inaddr), sizeof(srcIP)-1);
-	srcIP[sizeof(srcIP)-1] = '\0';
-	inaddr.s_addr = ip->daddr;
-#endif	
 	strncpy(dstIP, inet_ntoa(inaddr), sizeof(dstIP)-1);
 	dstIP[sizeof(dstIP)-1] = '\0';
 
@@ -1607,13 +1480,8 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 
 	if(attempt) {
 		int flagsmatch = flags_match(attempt->door, ip, tcp);
-#if defined(__FreeBSD__) || defined(__APPLE__)		 
 		if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
 				dport == attempt->door->sequence[attempt->stage]) {
-#else
-		if(flagsmatch && ip->protocol == attempt->door->protocol[attempt->stage] &&
-				dport == attempt->door->sequence[attempt->stage]) {
-#endif				
 			process_attempt(attempt);
 		} else if(flagsmatch == 0) {
 			/* TCP flags didn't match -- just ignore this packet, don't
@@ -1633,13 +1501,8 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			if(!flags_match(door, ip, tcp)) {
 				continue;
 			}
-#if defined(__FreeBSD__) || defined(__APPLE__)
 			if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
 			   !strcmp(dstIP, door->target ? door->target : myip)) {
-#else
-			if(ip->protocol == door->protocol[0] && dport == door->sequence[0] &&
-			   !strcmp(dstIP, door->target ? door->target : myip)) {
-#endif
 				struct hostent *he;
 				/* create a new entry */
 				attempt = (knocker_t*)malloc(sizeof(knocker_t));
@@ -1651,11 +1514,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				strcpy(attempt->src, srcIP);
 				/* try a reverse lookup if enabled  */
 				if (o_lookup) {
-#if defined(__FreeBSD__) || defined(__APPLE__)
 					inaddr.s_addr = ip->ip_src.s_addr;
-#else
-					inaddr.s_addr = ip->saddr;
-#endif					
 					he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
 					if(he) {
 						attempt->srchost = strdup(he->h_name);

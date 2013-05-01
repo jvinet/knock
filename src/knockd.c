@@ -211,11 +211,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-#if defined(__FreeBSD__) || defined(__APPLE__)
 	cap = pcap_open_live(o_int, 65535, 0, 1, pcapErr);
-#else
-	cap = pcap_open_live(o_int, 65535, 0, 0, pcapErr);
-#endif	
 	if(strlen(pcapErr)) {
 		fprintf(stderr, "could not open %s: %s\n", o_int, pcapErr);
 	}

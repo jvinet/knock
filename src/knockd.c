@@ -28,11 +28,9 @@
 #include <ctype.h>
 #include <string.h>
 #include <fcntl.h>
-#if defined(__FreeBSD__) || defined(__APPLE__)
 #include <limits.h>
 #include <sys/socket.h>
 #include <netinet/in_systm.h>
-#endif
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
@@ -40,10 +38,6 @@
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <net/if.h>
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
-#include <bits/time.h>
-#include <linux/limits.h>
-#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
@@ -1096,11 +1090,7 @@ char* get_ip(const char* iface, char *buf, int bufsize)
 	}
 	buf[0] = '\0';
 
-#if defined(__FreeBSD__) || defined(__APPLE__)
 	s = socket(AF_INET, SOCK_DGRAM, 0);
-#else
-	s = socket(PF_PACKET, SOCK_DGRAM, 0);
-#endif
 	if(s < 0) {
 		return(NULL);
 	}

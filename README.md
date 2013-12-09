@@ -1,8 +1,8 @@
-# knock :: A port-knocking implementation
+## knock: A port-knocking implementation
 
 Copyright (c) 2004, Judd Vinet <jvinet@zeroflux.org>
 
-## ABOUT  
+### ABOUT  
 
 This is a port-knocking server/client.  Port-knocking is a method where a
 server can sniff one of its interfaces for a special "knock" sequence of
@@ -11,7 +11,7 @@ knock sequence.  These port-hits need not be on open ports, since we use
 libpcap to sniff the raw interface traffic.
 
 
-## BUILDING
+### BUILDING
 
 To build knockd, make sure you have libpcap and the autoconf tools
 installed. Then run the following:
@@ -22,7 +22,7 @@ installed. Then run the following:
     $ sudo make install
 
 
-## EXAMPLE  
+### EXAMPLE  
 
 The example below could be used to run a strict (DENY policy) firewall that
 can only be accessed after a successful knock sequence.
@@ -38,7 +38,7 @@ can only be accessed after a successful knock sequence.
      22 to Client.
 
 
-## KNOCKING CLIENTS
+### KNOCKING CLIENTS
 
 The accompanying knock client is very basic.  If you want to do more advanced
 knocks (eg, setting specific tcp flags) then you should take look at hping,
@@ -49,7 +49,7 @@ sendip or packit.
   - [packit](http://freshmeat.net/projects/packit/)
 
 
-## OTHER IMPLEMENTATIONS  
+### OTHER IMPLEMENTATIONS  
 
 Here are some other implementations of port-knocking:
 

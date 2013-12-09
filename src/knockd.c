@@ -28,11 +28,13 @@
 #include <ctype.h>
 #include <string.h>
 #include <fcntl.h>
+
 #if defined(__FreeBSD__) || defined(__APPLE__)
 #include <limits.h>
 #include <sys/socket.h>
 #include <netinet/in_systm.h>
 #endif
+
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
@@ -40,10 +42,12 @@
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <net/if.h>
+
 #if !defined(__FreeBSD__) && !defined(__APPLE__)
 #include <bits/time.h>
 #include <linux/limits.h>
 #endif
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
@@ -89,7 +93,7 @@ typedef struct opendoor {
 } opendoor_t;
 PMList *doors = NULL;
 
-/* we keep one list of knock attempts, one per IP address,
+/* we keep one list of knock attempts per IP address,
  * and increment the stage as they progress through the sequence.
  */
 typedef struct knocker {
@@ -123,10 +127,10 @@ long get_current_one_time_sequence_position(opendoor_t *door);
 void generate_pcap_filter();
 size_t realloc_strcat(char **dest, const char *src, size_t size);
 void close_door(opendoor_t *door);
-char* get_ip(const char* iface, char *buf, int bufsize);
-size_t parse_cmd(char* dest, size_t size, const char* command, const char* src);
-int exec_cmd(char* command, char* name);
-void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet);
+char* get_ip(const char *iface, char *buf, int bufsize);
+size_t parse_cmd(char *dest, size_t size, const char *command, const char *src);
+int exec_cmd(char *command, char *name);
+void sniff(u_char *arg, const struct pcap_pkthdr *hdr, const u_char *packet);
 
 pcap_t *cap = NULL;
 FILE *logfd = NULL;
@@ -211,11 +215,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-#if defined(__FreeBSD__) || defined(__APPLE__)
-	cap = pcap_open_live(o_int, 65535, 0, 1, pcapErr);
-#else
-	cap = pcap_open_live(o_int, 65535, 0, 0, pcapErr);
-#endif	
+	cap = pcap_open_live(o_int, 65535, 0, 10, pcapErr);
 	if(strlen(pcapErr)) {
 		fprintf(stderr, "could not open %s: %s\n", o_int, pcapErr);
 	}

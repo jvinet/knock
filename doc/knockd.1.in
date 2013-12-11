@@ -172,6 +172,13 @@ interfere with (and thus invalidate) the knock.
 Separate multiple flags with commas (eg, TCPFlags = syn,ack,urg).  Flags can be
 explicitly excluded by a "!" (eg, TCPFlags = syn,!ack).
 .TP
+.B "Target = <ip-address>"
+Use the specified IP address instead of the address determined for the
+\fBInterface\fP when matching the \fBSequence\fP.
+This is useful if knockd is running on a router and you want to do something
+in response to an actual connection attempt to a routed host - e.g., invoking
+etherwake to send the host a WOL packet.
+.TP
 .B "Start_Command = <command>"
 Specify the command to be executed when a client makes the correct
 port-knock.  All instances of \fB%IP%\fP will be replaced with the

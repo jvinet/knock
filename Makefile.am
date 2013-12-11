@@ -10,7 +10,7 @@ man_MANS += doc/knockd.1
 sysconf_DATA = knockd.conf
 endif
 
-dist_doc_DATA = README TODO ChangeLog COPYING
+dist_doc_DATA = README.md TODO ChangeLog COPYING
 
 knock_SOURCES = src/knock.c
 knockd_SOURCES = src/knockd.c src/list.c src/list.h

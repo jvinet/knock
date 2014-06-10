@@ -4,8 +4,8 @@ VERSION         DESCRIPTION
                 - Document the 'target' configuration directive.
                 - Merging OS-specific networking code to reduce LOCs and the
                   sea of #ifdefs.
-                - Added 50ms timeout to pcap_open_live() to reduce CPU usage
-                  on network-heavy hosts. Pcap recommends we not use zero.
+              - Added 50ms timeout to pcap_open_live() to reduce CPU usage
+                on network-heavy hosts. Pcap recommends we not use zero.
 0.6           - Patches from Oswald Buddenhagen:
                 - Cleanup: Don't null-check before free
                 - Cleanup: Consolidate flag-check logic

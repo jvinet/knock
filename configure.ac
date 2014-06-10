@@ -1,4 +1,4 @@
-AC_PREREQ(2.59)
+AC_PREREQ(2.60)
 AC_INIT([knock], [0.6], [https://github.com/jvinet/knock/issues])
 AM_INIT_AUTOMAKE([dist-xz no-dist-gzip foreign subdir-objects])
 

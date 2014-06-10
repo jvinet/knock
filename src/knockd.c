@@ -1,8 +1,8 @@
 /*
  *  knockd.c
- * 
+ *
  *  Copyright (c) 2004-2012 by Judd Vinet <jvinet@zeroflux.org>
- * 
+ *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation; either version 2 of the License, or
@@ -15,7 +15,7 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, 
+ *  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
  *  USA.
  */
 
@@ -205,7 +205,9 @@ int main(int argc, char **argv)
 		}
 	}
 
-	cap = pcap_open_live(o_int, 65535, 0, 1, pcapErr);
+	/* 50ms timeout for packet capture. See pcap(3pcap) manpage, which
+	 * recommends that a timeout of 0 not be used. */
+	cap = pcap_open_live(o_int, 65535, 0, 50, pcapErr);
 	if(strlen(pcapErr)) {
 		fprintf(stderr, "could not open %s: %s\n", o_int, pcapErr);
 	}
@@ -224,7 +226,7 @@ int main(int argc, char **argv)
 		case DLT_RAW:
 			dprint("raw interface detected, no encapsulation\n");
 			break;
-		default: 
+		default:
 			fprintf(stderr, "error: unsupported link-layer type: %d\n", lltype);
 			cleanup(1);
 			break;
@@ -313,7 +315,7 @@ void logprint(char *fmt, ...)
 		struct tm *tm;
 		t = time(NULL);
 		tm = localtime(&t);
-		
+
 		fprintf(logfd, "[%04d-%02d-%02d %02d:%02d] %s\n", tm->tm_year+1900,
 			tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min, msg);
 		fflush(logfd);
@@ -396,7 +398,7 @@ void reload(int signum)
 	if(logfd == NULL) {
 		perror("warning: cannot open logfile");
 	}
-	
+
 	return;
 }
 
@@ -447,7 +449,7 @@ char* trim(char *str)
 	if(pch != str) {
 		memmove(str, pch, (strlen(pch) + 1));
 	}
-	
+
 	pch = (char*)(str + (strlen(str) - 1));
 	while(isspace(*pch)) {
 		pch--;
@@ -531,7 +533,7 @@ int parseconfig(char *configfile)
 					dprint("config: usesyslog\n");
 				} else {
 					fprintf(stderr, "config: line %d: syntax error\n", linenum);
-					return(1);			
+					return(1);
 				}
 			} else {
 				trim(ptr);
@@ -717,7 +719,7 @@ int get_new_one_time_sequence(opendoor_t *door)
 		return(1);
 	}
 	dprint_sequence(door, "new sequence for door %s: ", door->name);
-	
+
 	return(0);
 }
 
@@ -730,7 +732,7 @@ long get_next_one_time_sequence(opendoor_t *door)
 {
 	char line[PATH_MAX+1];
 	int pos;
-	
+
 	pos = ftell(door->one_time_sequences_fd);
 	while(fgets(line, PATH_MAX, door->one_time_sequences_fd)) {
 		trim(line);
@@ -782,7 +784,7 @@ long get_current_one_time_sequence_position(opendoor_t *door)
 
 	rewind(door->one_time_sequences_fd);
 	pseudo_door.one_time_sequences_fd = door->one_time_sequences_fd;
-	
+
 	pos = get_next_one_time_sequence(&pseudo_door);
 	while(pos >= 0) {
 		if(door->seqcount == pseudo_door.seqcount) {
@@ -815,7 +817,7 @@ void generate_pcap_filter()
 	unsigned int i;
 	short modified_filters = 0;  /* flag indicating if at least one filter has changed --> recompile the filter */
 	struct bpf_program bpf_prog; /* compiled BPF filter program */
-	
+
 	/* generate subfilters for each door having a NULL pcap_filter_exp
 	 *
 	 * Example filter for one single door:
@@ -830,11 +832,11 @@ void generate_pcap_filter()
 
 		/* if we get here at least one door had a pcap_filter_exp == NULL */
 		modified_filters = 1;
-		
+
 		head_set = 0;
 		tcp_present = 0;
 		udp_present = 0;
-		
+
 		/* allocate memory for buffer if needed.
 		 * The first allocation will be 200 Bytes (should be large enough for common sequences). If there is
 		 * not enough space, a call to realloc_strcat() will eventually increase its size. The buffer will be
@@ -953,7 +955,7 @@ void generate_pcap_filter()
 		}
 
 		bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parantheses around port filters */
-		
+
 		/* test if in any of the precedent calls to realloc_strcat() failed. We can do this safely here because
 		 * realloc_strcat() returns 0 on failure and if a buffer size of 0 is passed to it, the function does
 		 * nothing but returning 0 again. Because we never read buffer in the above code, it is secure to test
@@ -970,7 +972,7 @@ void generate_pcap_filter()
 			perror("malloc");
 			cleanup(1);
 		}
-		strcpy(door->pcap_filter_exp, buffer);	
+		strcpy(door->pcap_filter_exp, buffer);
 		dprint("Adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
 		buffer[0] = '\0';	/* "clear" the buffer */
 	}
@@ -1041,7 +1043,7 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 
 	needed_size = strlen(*dest) + strlen(src) + 1;		/* '+ 1' for '\0' */
 	new_size = size;
-	
+
 	while(needed_size > new_size) {
 		new_size *= 2;
 	}
@@ -1054,7 +1056,7 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 
 	/* now dest is large enough to strcat() the src */
 	strcat(*dest, src);
-	
+
 	return new_size;
 }
 
@@ -1124,24 +1126,30 @@ size_t parse_cmd(char* dest, size_t size, const char* command, const char* src)
 	size_t n = size;
 	size_t command_len = strlen(command);
 	size_t total_len = 0;
-	int size_larger_than_zero = 1;			/* allows us to calculate total length of result string even if the size is zero
-							   by setting n to 1 (--> noting will be ever written to dest) */
+
+	/* allows us to calculate total length of result string even if the size */
+	/* is zero by setting n to 1 (--> noting will be ever written to dest) */
+	int size_larger_than_zero = 1;
 	if(size == 0) {
 		size_larger_than_zero = 0;
 		n = 1;
 	}
 
-	token = strstr(c, "%IP%");			/* get location of first token */
+	/* get location of first token */
+	token = strstr(c, "%IP%");
 	if(!token) {
-		token = (char*) (c + command_len + 1);	/* point token past command (we won't access it anymore) */
+		/* point token past command (we won't access it anymore) */
+		token = (char*) (c + command_len + 1);
 	}
 	while(*c != '\0') {
-		if(c < token) {				/* not reached a token yet --> append from command */
+		/* not reached a token yet --> append from command */
+		if(c < token) {
 			if(n != 1) {
 				*d++ = *c;
 				n--;
 			}
-		} else {				/* we reached a token --> append from src */
+		} else {
+			/* we reached a token --> append from src */
 			while(*s != '\0') {
 				if(n != 1) {
 					*d++ = *s;
@@ -1150,19 +1158,21 @@ size_t parse_cmd(char* dest, size_t size, const char* command, const char* src)
 				s++;
 				total_len++;
 			}
-			c += 4;				/* skip the token in command */
-			s = src;			/* "rewind" src string for next token */
-			token = strstr(c, "%IP%");	/* get location of next token */
+			c += 4;  /* skip the token in command */
+			s = src; /* "rewind" src string for next token */
+			token = strstr(c, "%IP%"); /* get location of next token */
 			if(!token) {
-				token = (char*) (c + command_len + 1);	/* point token past command (we won't access it anymore) */
+				/* point token past command (we won't access it anymore) */
+				token = (char*) (c + command_len + 1);
 			}
-			c--;				/* compensate for the following c++ */
-			total_len--;			/* compensate for the following total_len++ */
+			c--; /* compensate for the following c++ */
+			total_len--; /* compensate for the following total_len++ */
 		}
 		c++;
 		total_len++;
 	}
-	if(size_larger_than_zero) {			/* terminate dest if its size is larger than 0 */
+	if(size_larger_than_zero) {
+		/* terminate dest if its size is larger than 0 */
 		*d = '\0';
 	}
 
@@ -1372,7 +1382,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		if(ntohs(eth->ether_type) != ETHERTYPE_IP) {
 			return;
 		}
-		
+
 		ip = (struct ip*)(packet + sizeof(struct ether_header));
 #ifdef __linux__
 	} else if(lltype == DLT_LINUX_SLL) {
@@ -1524,13 +1534,6 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				attempt->stage = 0;
 				attempt->seq_start = pkt_secs;
 				attempt->door = door;
-				if(attempt->srchost) {
-					vprint("%s (%s): %s: Stage 1\n", attempt->src, attempt->srchost, door->name);
-					logprint("%s (%s): %s: Stage 1", attempt->src, attempt->srchost, door->name);
-				} else {
-					vprint("%s: %s: Stage 1\n", attempt->src, door->name);
-					logprint("%s: %s: Stage 1", attempt->src, door->name);
-				}
 				attempts = list_add(attempts, attempt);
 				process_attempt(attempt);
 			}

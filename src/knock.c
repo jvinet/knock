@@ -1,8 +1,8 @@
 /*
  *  knock.c
- * 
+ *
  *  Copyright (c) 2004-2012 by Judd Vinet <jvinet@zeroflux.org>
- * 
+ *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation; either version 2 of the License, or
@@ -36,7 +36,7 @@
 #include <getopt.h>
 #include <fcntl.h>
 
-static char version[] = "0.5";
+static char version[] = "0.7";
 
 #define PROTO_TCP 1
 #define PROTO_UDP 2
@@ -110,16 +110,16 @@ int main(int argc, char** argv)
 		} else {
 			port = atoi(arg);
 		}
-		
+
 		if(o_udp || proto == PROTO_UDP) {
-			sd = socket(PF_INET, SOCK_DGRAM, 0); 
+			sd = socket(PF_INET, SOCK_DGRAM, 0);
 			if(sd == -1) {
 				fprintf(stderr, "Cannot open socket\n");
 				exit(1);
 			}
 		} else {
 			int flags;
-			sd = socket(PF_INET, SOCK_STREAM, 0); 
+			sd = socket(PF_INET, SOCK_STREAM, 0);
 			if(sd == -1) {
 				fprintf(stderr, "Cannot open socket\n");
 				exit(1);

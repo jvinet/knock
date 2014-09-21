@@ -20,3 +20,4 @@ knockd_SOURCES = src/knockd.c src/list.c src/list.h
 	sed -e "s/#VERSION#/$(VERSION)/" $< > $@
 
 EXTRA_DIST = doc/knock.1 doc/knock.1.in doc/knockd.1 doc/knockd.1.in knockd.conf
+CLEANFILES = $(man_MANS)

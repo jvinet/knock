@@ -18,7 +18,7 @@ can specify the protocol on a per-port basis.  See the example below.
 .B "\-d <t>, \-\-delay <t>"
 Wait <t> milliseconds between each port hit.  This can be used in situations
 where a router mistakes your stream of SYN packets as a port scan and blocks
-them.  If the packet rate is slowed with --delay, then the router should let
+them.  If the packet rate is slowed with \-\-delay, then the router should let
 the packets through.
 .TP
 .B "\-v, \-\-verbose"
@@ -32,7 +32,7 @@ Syntax help.
 .SH EXAMPLES
 .nf
 knock myserver.example.com 123:tcp 456:udp 789:tcp
-knock -u myserver.example.com 8284 4721 18592 42912
+knock \-u myserver.example.com 8284 4721 18592 42912
 .fi
 .SH SEE ALSO
 \fBknockd\fP is the accompanying port-knock server.

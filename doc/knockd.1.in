@@ -25,7 +25,7 @@ Specify an alternate location for the config file.  Default is
 \fI/etc/knockd.conf\fP.
 .TP
 .B "\-D, \-\-debug"
-Ouput debugging messages.
+Output debugging messages.
 .TP
 .B "\-l, \-\-lookup"
 Lookup DNS names for log entries. This may be a security risk! See section
@@ -60,13 +60,13 @@ firewall and would like to access it discreetly.
 	sequence    = 7000,8000,9000
 	seq_timeout = 10
 	tcpflags    = syn
-	command     = /usr/sbin/iptables -A INPUT -s %IP% --dport 22 -j ACCEPT
+	command     = /usr/sbin/iptables \-A INPUT \-s %IP% \-\-dport 22 \-j ACCEPT
 
 [closeSSH]
 	sequence    = 9000,8000,7000
 	seq_timeout = 10
 	tcpflags    = syn
-	command     = /usr/sbin/iptables -D INPUT -s %IP% --dport 22 -j ACCEPT
+	command     = /usr/sbin/iptables \-D INPUT \-s %IP% \-\-dport 22 \-j ACCEPT
 
 .fi
 .RE
@@ -87,9 +87,9 @@ and TCP ports.
 	sequence      = 2222:udp,3333:tcp,4444:udp
 	seq_timeout   = 15
 	tcpflags      = syn,ack
-	start_command = /usr/sbin/iptables -A INPUT -s %IP% -p tcp --syn -j ACCEPT
+	start_command = /usr/sbin/iptables \-A INPUT \-s %IP% \-p tcp \-\-syn \-j ACCEPT
 	cmd_timeout   = 5
-	stop_command  = /usr/sbin/iptables -D INPUT -s %IP% -p tcp --syn -j ACCEPT
+	stop_command  = /usr/sbin/iptables \-D INPUT \-s %IP% \-p tcp \-\-syn \-j ACCEPT
 
 .fi
 .RE
@@ -112,9 +112,9 @@ sniffing the network).
 	one_time_sequences = /etc/knockd/smtp_sequences
 	seq_timeout        = 15
 	tcpflags           = fin,!ack
-	start_command      = /usr/sbin/iptables -A INPUT -s %IP% -p tcp --dport 25 -j ACCEPT
+	start_command      = /usr/sbin/iptables \-A INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
 	cmd_timeout        = 5
-	stop_command       = /usr/sbin/iptables -D INPUT -s %IP% -p tcp --dport 25 -j ACCEPT
+	stop_command       = /usr/sbin/iptables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
 	
 .fi
 .RE

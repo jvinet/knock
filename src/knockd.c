@@ -1441,23 +1441,34 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 
 	/* clean up expired/completed/failed attempts */
 	for(lp = attempts; lp; lp = lp->next) {
-		int nix = 0;
+		int nix = 0; /* Clear flag */
 		attempt = (knocker_t*)lp->data;
+
+		/* Check if the sequence has been completed */
 		if(attempt->stage >= attempt->door->seqcount) {
 			dprint("removing successful knock attempt (%s)\n", attempt->src);
 			nix = 1;
 		}
+
+		/* Signed integer overflow check.
+		   If we received more than 32767 packets the sign will be negative*/
 		if(attempt->stage < 0) {
 			dprint("removing failed knock attempt (%s)\n", attempt->src);
 			nix = 1;
 		}
+
+		/* Check if timeout has been reached */
 		if(!nix && (pkt_secs - attempt->seq_start) >= attempt->door->seq_timeout) {
+
+			/* Do we know the hostname? */
 			if(attempt->srchost) {
+				/* Log the hostname */
 				vprint("%s (%s): %s: sequence timeout (stage %d)\n", attempt->src, attempt->srchost,
 						attempt->door->name, attempt->stage);
 				logprint("%s (%s): %s: sequence timeout (stage %d)\n", attempt->src, attempt->srchost,
 						attempt->door->name, attempt->stage);
 			} else {
+				/* Log the IP */
 				vprint("%s: %s: sequence timeout (stage %d)\n", attempt->src,
 						attempt->door->name, attempt->stage);
 				logprint("%s: %s: sequence timeout (stage %d)\n", attempt->src,
@@ -1465,14 +1476,19 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			}
 			nix = 1;
 		}
+
+		/* If clear flag is set */
 		if(nix) {
-			knocker_t *k = (knocker_t*)lp->data;
 			/* splice this entry out of the list */
 			if(lp->prev) lp->prev->next = lp->next;
 			if(lp->next) lp->next->prev = lp->prev;
+			/* If lp is the only element of the list then empty the list */
 			if(lp == attempts) attempts = NULL;
-			lp->prev = lp->next = NULL;
-			free(k->srchost);
+			lp->prev = lp->next = NULL; /* Splice completed */
+			if (attempt->srchost) {
+				free(attempt->srchost);
+				attempt->srchost = NULL;
+			}
 			list_free(lp);
 			continue;
 		}

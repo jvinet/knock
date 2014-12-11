@@ -32,13 +32,12 @@
 #include <sys/socket.h>
 #include <netinet/in_systm.h>
 #include <netinet/in.h>
-#include <net/if_arp.h>
-#include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <net/if.h>
+#include <netinet/if_ether.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
@@ -1494,7 +1493,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				free(attempt->srchost);
 				attempt->srchost = NULL;
 			}
-			free(lp);
+			list_free(lp);
 		}
 
 		lp = lpnext;

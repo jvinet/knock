@@ -32,6 +32,7 @@
 #include <sys/socket.h>
 #include <netinet/in_systm.h>
 #include <netinet/in.h>
+#include <net/if_arp.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -220,9 +221,11 @@ int main(int argc, char **argv)
 		case DLT_EN10MB:
 			dprint("ethernet interface detected\n");
 			break;
+#ifdef __linux__
 		case DLT_LINUX_SLL:
 			dprint("ppp interface detected (linux \"cooked\" encapsulation)\n");
 			break;
+#endif
 		case DLT_RAW:
 			dprint("raw interface detected, no encapsulation\n");
 			break;
@@ -1440,8 +1443,10 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			proto, srcIP, sport, dstIP, dport, hdr->len);
 
 	/* clean up expired/completed/failed attempts */
-	for(lp = attempts; lp; lp = lp->next) {
+	lp = attempts;
+	while(lp != NULL) {
 		int nix = 0; /* Clear flag */
+		PMList *lpnext = lp->next;
 		attempt = (knocker_t*)lp->data;
 
 		/* Check if the sequence has been completed */
@@ -1489,9 +1494,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				free(attempt->srchost);
 				attempt->srchost = NULL;
 			}
-			list_free(lp);
-			continue;
+			free(lp);
 		}
+
+		lp = lpnext;
+
 	}
 
 	attempt = NULL;

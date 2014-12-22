@@ -366,8 +366,9 @@ void cleanup(int signum)
 
 void child_exit(int signum)
 {
-	/* child wants to exit, let em die */
-	wait(NULL);
+	int status;
+
+	while ( waitpid( (pid_t)-1, &status, WNOHANG ) > 0 ) continue;
 	return;
 }
 

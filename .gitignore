@@ -1,6 +1,7 @@
 *.o
 *~
 .deps
+.dirstamp
 /Makefile
 /Makefile.in
 /aclocal.m4
@@ -10,6 +11,7 @@
 /config.log
 /config.status
 /configure
+/compile
 /depcomp
 /doc/*.1
 /install-sh

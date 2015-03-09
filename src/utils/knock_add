@@ -1,0 +1,87 @@
+#!/bin/sh
+
+SCRIPT_NAME=$(basename $0)
+
+AWK="/bin/awk"
+GREP="/bin/grep"
+IPTABLES="/sbin/iptables"
+SORT="/bin/sort"
+
+ADD_CHAIN="INPUT"
+ADD_COMMENT="Added by knockd - ssh"
+ADD_PORT="22"
+DRY_RUN=0
+SEEN=0
+VERBOSE=0
+
+usage() {
+	echo "usage: $SCRIPT_NAME [-d|-h|-v] IPADDR"
+	echo "Options:"
+	echo "-d|--dry-run     Don't actually add IPADDR to $ADD_CHAIN chain"
+	echo "-h|--help        Print this informational screen and exit"
+	echo "-v|--verbose     Print verbose information about actions"
+}
+
+ARGS=$(getopt -o dhv -l "dry-run,help,verbose" -n $SCRIPT_NAME -- "$@")
+
+if [ $? -ne 0 ];
+then
+        echo "Bad arguments"
+        usage
+        exit 1
+fi
+
+eval set -- "$ARGS"
+
+while true; do
+        case "$1" in
+                -d|--dry-run)
+			DRY_RUN=1
+                        shift;
+                ;;
+		-h|--help)
+			usage
+			shift;
+			exit
+		;;
+		-v|--verbose)
+			VERBOSE=1
+			shift;
+		;;
+                --)
+                        shift;
+                        break;
+                ;;
+        esac
+done
+
+ADD_IP=$1
+
+if [ "$VERBOSE" -eq 1 ]; then
+	echo "Testing $ADD_IP"
+fi
+
+for IP in `$IPTABLES -n -L KNOCKD | $GREP ACCEPT | $AWK '{print $4}' | $SORT -u`;
+do
+	if [ "$VERBOSE" -eq 1 ]; then
+		echo "$IP"
+	fi
+
+	if [ "$ADD_IP" == "$IP" ]; then
+		SEEN=1
+	fi
+done
+
+if [ "$VERBOSE" -eq 1 ]; then
+	echo "SEEN: $SEEN"
+fi
+
+if [ "$SEEN" -eq 0 ]; then
+	if [ "$VERBOSE" -eq 1 ]; then
+		echo "Adding $ADD_IP"
+	fi
+
+	if [ "$DRY_RUN" -eq 0 ]; then
+		$IPTABLES -A $ADD_CHAIN -s $ADD_IP -p tcp --dport $ADD_PORT -j ACCEPT
+	fi
+fi

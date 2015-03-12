@@ -8,8 +8,13 @@ IPTABLES="/sbin/iptables"
 SORT="/bin/sort"
 
 ADD_CHAIN="INPUT"
-ADD_COMMENT="Added by knockd - ssh"
+ADD_COMMENT=""
+ADD_METHOD="-I"
 ADD_PORT="22"
+ADD_PROTOCOL="tcp"
+
+COMMENT=0
+DEFAULT_COMMENT="Added by knockd - ssh"
 DRY_RUN=0
 SEEN=0
 VERBOSE=0
@@ -17,12 +22,17 @@ VERBOSE=0
 usage() {
 	echo "usage: $SCRIPT_NAME [-d|-h|-v] IPADDR"
 	echo "Options:"
+	echo "-c|--chain       The NetFilter chain to add this address to"
 	echo "-d|--dry-run     Don't actually add IPADDR to $ADD_CHAIN chain"
 	echo "-h|--help        Print this informational screen and exit"
+	echo "-i|--insert      The method to use when adding the rule to NetFilter; valid values are: append, insert"
+	echo "-m|--comment     If present with argument will use that as a comment, if no arg use a boilerplate comment"
+	echo "-p|--port        The port to add allow for default: $ADD_PORT"
+	echo "-t|--protocol    The protocol to add allow for (i.e. tcp, udp) default: $ADD_PROTOCOL"
 	echo "-v|--verbose     Print verbose information about actions"
 }
 
-ARGS=$(getopt -o dhv -l "dry-run,help,verbose" -n $SCRIPT_NAME -- "$@")
+ARGS=$(getopt -o c:dhv -l "comment:,dry-run,help,verbose" -n $SCRIPT_NAME -- "$@")
 
 if [ $? -ne 0 ];
 then
@@ -35,6 +45,16 @@ eval set -- "$ARGS"
 
 while true; do
         case "$1" in
+		-c|--comment)
+			shift;
+			COMMENT=1
+			if [ -n "$1" ]; then
+				ADD_COMENT=$1
+				shift;
+			else
+				ADD_COMMENT=$DEFAULT_COMMENT
+			fi
+		;;
                 -d|--dry-run)
 			DRY_RUN=1
                         shift;
@@ -79,9 +99,10 @@ fi
 if [ "$SEEN" -eq 0 ]; then
 	if [ "$VERBOSE" -eq 1 ]; then
 		echo "Adding $ADD_IP"
+		echo $IPTABLES $ADD_METHOD $ADD_CHAIN -s $ADD_IP -p $ADD_PROTOCOL --dport $ADD_PORT -j ACCEPT
 	fi
 
 	if [ "$DRY_RUN" -eq 0 ]; then
-		$IPTABLES -A $ADD_CHAIN -s $ADD_IP -p tcp --dport $ADD_PORT -j ACCEPT
+		$IPTABLES $ADD_METHOD $ADD_CHAIN -s $ADD_IP -p $ADD_PROTOCOL --dport $ADD_PORT -j ACCEPT
 	fi
 fi

@@ -1,0 +1,171 @@
+#!/bin/sh
+
+SCRIPT_NAME=$(basename $0)
+
+AWK="/bin/awk"
+GREP="/bin/grep"
+IPTABLES="/usr/sbin/iptables"
+SORT="/bin/sort"
+
+DEFAULT_COMMENT="Added by knockd - ssh"
+
+ADD_CHAIN="INPUT"
+ADD_COMMENT=""
+ADD_IP=""
+ADD_METHOD="insert"
+ADD_PORT="22"
+ADD_PROTOCOL="tcp"
+
+DRY_RUN=0
+SEEN=0
+VERBOSE=0
+
+usage() {
+	echo "usage: $SCRIPT_NAME [OPTIONS] -a IPADDR"
+	echo "Options:"
+	echo "-a|--address     The IP address to add"
+	echo "-c|--chain       The NetFilter chain to add this address to"
+	echo "-d|--dry-run     Don't actually add IPADDR to $ADD_CHAIN chain"
+	echo "-h|--help        Print this informational screen and exit"
+	echo "-i|--insert      The method to use when adding the rule to NetFilter; valid values are: append, insert"
+	echo "-m|--comment     If present with optional argument will use that as a comment, if no argument use a boilerplate comment"
+	echo "-p|--port        The port to add allow for default: $ADD_PORT"
+	echo "-t|--protocol    The protocol to add allow for (i.e. tcp, udp) default: $ADD_PROTOCOL"
+	echo "-v|--verbose     Print verbose information about actions"
+}
+
+ARGS=$(getopt -o a:c:dhi:m::p:t:v -l "address:,chain:,comment::,dry-run,help,insert:,port:,protocol:,verbose" -n $SCRIPT_NAME -- "$@")
+
+if [ $? -ne 0 ];
+then
+        echo "Bad arguments"
+        usage
+        exit 1
+fi
+
+eval set -- "$ARGS"
+
+while true; do
+        case "$1" in
+		-a|--address)
+			ADD_IP=$2
+			shift 2;
+		;;
+		-c|--chain)
+			ADD_CHAIN=$2
+			shift 2;
+		;;
+		-d|--dry-run)
+			DRY_RUN=1
+                        shift;
+                ;;
+		-h|--help)
+			usage
+			shift;
+			exit
+		;;
+		-i|--insert)
+			ADD_METHOD=$2
+			shift 2;
+		;;
+		-m|--comment)
+			case "$2" in
+				"")
+					ADD_COMMENT=$DEFAULT_COMMENT;
+					shift 2;;
+				*)
+					ADD_COMMENT=$2;
+					shift 2 ;;
+			esac
+		;;
+		-p|--port)
+			ADD_PORT=$2
+			shift 2;
+		;;
+		-t|--protocol)
+			ADD_PROTOCOL=$2
+			shift 2;
+		;;
+		-v|--verbose)
+			VERBOSE=1
+			shift;
+		;;
+                --)
+                        shift;
+                        break;
+                ;;
+        esac
+done
+
+#if [ -z "$1" ]; then
+#	echo "error: ip address required"
+#	usage
+#	exit 1
+#fi
+#
+#ADD_IP=$1
+
+if [ -z "$ADD_IP" ]; then
+	echo "error: ip address required"
+	usage
+	exit 1
+fi
+
+if [ "$VERBOSE" -eq 1 ]; then
+	echo "Testing $ADD_IP"
+fi
+
+# Sanity checking options
+case "$ADD_METHOD" in
+	insert)
+		ADD_METHOD="-I"
+	;;
+	append)
+		ADD_METHOD="-A"
+	;;
+	*)
+		echo "error: Invalid insert value"
+		usage
+		exit 1
+	;;
+esac
+
+COMMENT=""
+if [ -n "$ADD_COMMENT" ]; then
+	COMMENT="-m comment --comment '$ADD_COMMENT'"
+fi
+
+$IPTABLES -L $ADD_CHAIN &> /dev/null
+if [ 0 -ne "$?" ]; then
+	echo "error: $ADD_CHAIN is not a valid NetFilter chain"
+	exit
+fi
+# End Sanity Checks
+
+# Dupe checking
+for IP in `$IPTABLES -n -L KNOCKD | $GREP ACCEPT | $AWK '{print $4}' | $SORT -u`;
+do
+	if [ "$VERBOSE" -eq 1 ]; then
+		echo "$IP"
+	fi
+
+	if [ "$ADD_IP" == "$IP" ]; then
+		SEEN=1
+	fi
+done
+
+if [ "$VERBOSE" -eq 1 ]; then
+	echo "SEEN: $SEEN"
+fi
+
+
+if [ "$SEEN" -eq 0 ]; then
+	if [ "$VERBOSE" -eq 1 ]; then
+		echo "Adding $ADD_IP"
+		echo $IPTABLES $ADD_METHOD $ADD_CHAIN -s $ADD_IP -p $ADD_PROTOCOL --dport $ADD_PORT -j ACCEPT $COMMENT
+	fi
+
+	if [ "$DRY_RUN" -eq 0 ]; then
+		eval $IPTABLES $ADD_METHOD $ADD_CHAIN -s $ADD_IP -p $ADD_PROTOCOL --dport $ADD_PORT -j ACCEPT $COMMENT
+	fi
+fi

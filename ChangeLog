@@ -4,11 +4,6 @@ VERSION         DESCRIPTION
                 - Applied missing fixes from issue #16 - OpenBSD build
                   issues, reordering of headers, scoping DLT_LINUX_SLL for
                   Linux only, for -> while loop in sniff() cleanup.
-0.7.1         - Patches from Paul Rogers (paul.rogers@flumps.org)
-                - Fixed issue #2 - SIGHUP (reload) now listens for new
-                  sequences in the config file.
-                - Fixed issue #26 - knockd now fails if a malformed config
-                  file is read during SIGHUP (reload).
 0.7           - Patches from Oswald Buddenhagen:
                 - Document the 'target' configuration directive.
                 - Merging OS-specific networking code to reduce LOCs and the

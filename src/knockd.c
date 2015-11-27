@@ -32,12 +32,12 @@
 #include <sys/socket.h>
 #include <netinet/in_systm.h>
 #include <netinet/in.h>
-#include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <net/if.h>
+#include <netinet/if_ether.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
@@ -49,7 +49,7 @@
 #include <errno.h>
 #include "list.h"
 
-static char version[] = "0.7";
+static char version[] = "0.7.2";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */
@@ -220,9 +220,11 @@ int main(int argc, char **argv)
 		case DLT_EN10MB:
 			dprint("ethernet interface detected\n");
 			break;
+#ifdef __linux__
 		case DLT_LINUX_SLL:
 			dprint("ppp interface detected (linux \"cooked\" encapsulation)\n");
 			break;
+#endif
 		case DLT_RAW:
 			dprint("raw interface detected, no encapsulation\n");
 			break;
@@ -386,19 +388,29 @@ void reload(int signum)
 	}
 	list_free(doors);
 
-	parseconfig(o_cfg);
+	vprint("Closing log file: %s\n", o_logfile);
+	logprint("Closing log file: %s\n", o_logfile);
 
-	vprint("Closing and re-opening log file: %s\n", o_logfile);
-	logprint("Closing and re-opening log file: %s\n", o_logfile);
-
-	/* close and re-open the log file */
+	/* close the log file */
 	if(logfd) {
 		fclose(logfd);
 	}
+
+	if(parseconfig(o_cfg)) {
+		exit(1);
+	}
+
+	vprint("Re-opening log file: %s\n", o_logfile);
+	logprint("Re-opening log file: %s\n", o_logfile);
+
+	/* re-open the log file */
 	logfd = fopen(o_logfile, "a");
 	if(logfd == NULL) {
 		perror("warning: cannot open logfile");
 	}
+
+	/* Fix issue #2 by regenerating the PCAP filter post config file re-read */
+	generate_pcap_filter();
 
 	return;
 }
@@ -1366,7 +1378,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	struct tcphdr* tcp = NULL;
 	struct udphdr* udp = NULL;
 	char proto[8];
-	/* TCP/IP data */	
+	/* TCP/IP data */
 	struct in_addr inaddr;
 	unsigned short sport, dport;
 	char srcIP[16], dstIP[16];
@@ -1440,24 +1452,38 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			proto, srcIP, sport, dstIP, dport, hdr->len);
 
 	/* clean up expired/completed/failed attempts */
-	for(lp = attempts; lp; lp = lp->next) {
-		int nix = 0;
+	lp = attempts;
+	while(lp != NULL) {
+		int nix = 0; /* Clear flag */
+		PMList *lpnext = lp->next;
+
 		attempt = (knocker_t*)lp->data;
+
+		/* Check if the sequence has been completed */
 		if(attempt->stage >= attempt->door->seqcount) {
 			dprint("removing successful knock attempt (%s)\n", attempt->src);
 			nix = 1;
 		}
+
+		/* Signed integer overflow check.
+		   If we received more than 32767 packets the sign will be negative*/
 		if(attempt->stage < 0) {
 			dprint("removing failed knock attempt (%s)\n", attempt->src);
 			nix = 1;
 		}
+
+		/* Check if timeout has been reached */
 		if(!nix && (pkt_secs - attempt->seq_start) >= attempt->door->seq_timeout) {
+
+			/* Do we know the hostname? */
 			if(attempt->srchost) {
+				/* Log the hostname */
 				vprint("%s (%s): %s: sequence timeout (stage %d)\n", attempt->src, attempt->srchost,
 						attempt->door->name, attempt->stage);
 				logprint("%s (%s): %s: sequence timeout (stage %d)\n", attempt->src, attempt->srchost,
 						attempt->door->name, attempt->stage);
 			} else {
+				/* Log the IP */
 				vprint("%s: %s: sequence timeout (stage %d)\n", attempt->src,
 						attempt->door->name, attempt->stage);
 				logprint("%s: %s: sequence timeout (stage %d)\n", attempt->src,
@@ -1465,17 +1491,23 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			}
 			nix = 1;
 		}
+
+		/* If clear flag is set */
 		if(nix) {
-			knocker_t *k = (knocker_t*)lp->data;
 			/* splice this entry out of the list */
 			if(lp->prev) lp->prev->next = lp->next;
 			if(lp->next) lp->next->prev = lp->prev;
+			/* If lp is the only element of the list then empty the list */
 			if(lp == attempts) attempts = NULL;
 			lp->prev = lp->next = NULL;
-			free(k->srchost);
+			if (attempt->srchost) {
+				free(attempt->srchost);
+				attempt->srchost = NULL;
+			}
 			list_free(lp);
-			continue;
 		}
+
+		lp = lpnext;
 	}
 
 	attempt = NULL;

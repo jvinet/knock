@@ -1,4 +1,4 @@
-AM_CPPFLAGS=-D_BSD_SOURCE
+AM_CPPFLAGS=-D_DEFAULT_SOURCE
 AM_CFLAGS=-g -Wall -pedantic -fno-exceptions
 
 bin_PROGRAMS = knock

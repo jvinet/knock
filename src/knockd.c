@@ -406,6 +406,8 @@ void reload(int signum)
 		perror("warning: cannot open logfile");
 	}
 
+	generate_pcap_filter();
+
 	return;
 }
 

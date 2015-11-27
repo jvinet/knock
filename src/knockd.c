@@ -1378,7 +1378,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	struct tcphdr* tcp = NULL;
 	struct udphdr* udp = NULL;
 	char proto[8];
-	/* TCP/IP data */	
+	/* TCP/IP data */
 	struct in_addr inaddr;
 	unsigned short sport, dport;
 	char srcIP[16], dstIP[16];
@@ -1500,10 +1500,14 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			/* If lp is the only element of the list then empty the list */
 			if(lp == attempts) attempts = NULL;
 			lp->prev = lp->next = NULL;
-			free(k->srchost);
+			if (attempt->srchost) {
+				free(attempt->srchost);
+				attempt->srchost = NULL;
+			}
 			list_free(lp);
-			continue;
 		}
+
+		lp = lpnext;
 	}
 
 	attempt = NULL;

@@ -1,5 +1,9 @@
 VERSION         DESCRIPTION
 -----------------------------------------------------------------------------
+0.7.3         - Patches from Jonathon Reinhart
+                - Fixed PCAP filter for PSH flag detection.
+              - Patches from Christos Triantafyllidis
+                - Updated FSF address.
 0.7.2         - Patches from Paul Rogers (paul.rogers@flumps.org)
                 - Applied missing fixes from issue #16 - OpenBSD build
                   issues, reordering of headers, scoping DLT_LINUX_SLL for

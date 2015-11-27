@@ -49,7 +49,7 @@
 #include <errno.h>
 #include "list.h"
 
-static char version[] = "0.7.1";
+static char version[] = "0.7.2";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */

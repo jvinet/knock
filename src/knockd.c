@@ -386,19 +386,29 @@ void reload(int signum)
 	}
 	list_free(doors);
 
-	parseconfig(o_cfg);
+	vprint("Closing log file: %s\n", o_logfile);
+	logprint("Closing log file: %s\n", o_logfile);
 
-	vprint("Closing and re-opening log file: %s\n", o_logfile);
-	logprint("Closing and re-opening log file: %s\n", o_logfile);
-
-	/* close and re-open the log file */
+	/* close the log file */
 	if(logfd) {
 		fclose(logfd);
 	}
+
+	if(parseconfig(o_cfg)) {
+		exit(1);
+	}
+
+	vprint("Re-opening log file: %s\n", o_logfile);
+	logprint("Re-opening log file: %s\n", o_logfile);
+
+	/* re-open the log file */
 	logfd = fopen(o_logfile, "a");
 	if(logfd == NULL) {
 		perror("warning: cannot open logfile");
 	}
+
+	/* Fix issue #2 by regenerating the PCAP filter post config file re-read */
+	generate_pcap_filter();
 
 	return;
 }

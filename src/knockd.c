@@ -915,7 +915,7 @@ void generate_pcap_filter()
 				}
 			}
 			if(door->flag_psh != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-psh ", bufsize);
+				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
 				if(door->flag_psh == SET) {
 					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
 				}

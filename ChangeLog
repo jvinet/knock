@@ -1,11 +1,9 @@
 VERSION         DESCRIPTION
 -----------------------------------------------------------------------------
-0.7.4         - Patches from Michael Göhler
+0.7.4         - Patches from Michael GÃ¶hler
                 - Updated gitignore to include additional autoconf files.
                 - Updated Makefile to fix deprecated warning on CPPFLAG
 		- -D_BSD_SOURCE.
-              - Patches from Christos Triantafyllidis
-                - Updated FSF address.
 0.7.3         - Patches from Jonathon Reinhart
                 - Fixed PCAP filter for PSH flag detection.
               - Patches from Christos Triantafyllidis

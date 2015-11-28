@@ -1,6 +1,8 @@
 VERSION         DESCRIPTION
 -----------------------------------------------------------------------------
-0.7.4         - Patches from Michael GÃ¶hler
+0.7.5         - Added Greg Kuchyt's knock_add script but updated to be a
+                generic IPTables helper that also deletes rules
+0.7.4         - Patches from Michael Göhler
                 - Updated gitignore to include additional autoconf files.
                 - Updated Makefile to fix deprecated warning on CPPFLAG
 		- -D_BSD_SOURCE.

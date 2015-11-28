@@ -21,6 +21,7 @@ IPT_COMMENT=""
 IPT_SRC_IP=""
 IPT_DST_PORT=""
 IPT_PROTO="tcp"
+IPT_RULE_TARGET="ACCEPT"
 
 DRY_RUN=0
 SEEN=0
@@ -160,7 +161,7 @@ fi
 # End sanity checks
 
 # Dupe checking
-for IP in `$IPTABLES -n -L KNOCKD | $GREP ACCEPT | $AWK '{print $4}' | $SORT -u`;
+for IP in `$IPTABLES -n -L $IPT_CHAIN | $GREP $IPT_RULE_TARGET | $AWK '{print $4}' | $SORT -u`;
 do
 	if [ "$VERBOSE" -eq 1 ]; then
 		echo "$SCRIPT_NAME - $IP"
@@ -179,10 +180,10 @@ fi
 if [ "$SEEN" -eq 0 ]; then
 	if [ "$VERBOSE" -eq 1 ]; then
 		echo "$SCRIPT_NAME - $IPT_COMMENT"
-		echo $IPTABLES $IPT_METHOD $IPT_CHAIN -s $IPT_SRC_IP -p $IPT_PROTO --dport $IPT_DST_PORT -j ACCEPT $COMMENT
+		echo $IPTABLES $IPT_METHOD $IPT_CHAIN -s $IPT_SRC_IP -p $IPT_PROTO --dport $IPT_DST_PORT -j $IPT_RULE_TARGET $COMMENT
 	fi
 
 	if [ "$DRY_RUN" -eq 0 ]; then
-		eval $IPTABLES $IPT_METHOD $IPT_CHAIN -s $IPT_SRC_IP -p $IPT_PROTO --dport $IPT_DST_PORT -j ACCEPT $COMMENT
+		eval $IPTABLES $IPT_METHOD $IPT_CHAIN -s $IPT_SRC_IP -p $IPT_PROTO --dport $IPT_DST_PORT -j $IPT_RULE_TARGET $COMMENT
 	fi
 fi

@@ -48,7 +48,7 @@
 #include <errno.h>
 #include "list.h"
 
-static char version[] = "0.7.4";
+static char version[] = "0.7.6";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */
@@ -1388,6 +1388,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	char pkt_time[9];
 	PMList *lp;
 	knocker_t *attempt = NULL;
+	PMList *found_attempts = NULL;
 
 	if(lltype == DLT_EN10MB) {
 		eth = (struct ether_header*)packet;
@@ -1515,61 +1516,68 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		knocker_t *att = (knocker_t*)lp->data;
 		if(!strncmp(att->src, srcIP, sizeof(srcIP)) &&
 		   !strncmp(att->door->target ? att->door->target : myip, dstIP, sizeof(dstIP))) {
-			attempt = att;
-			break;
+/*			attempt = att;
+ *			break;
+ */			found_attempts = list_add(found_attempts, att);
 		}
 	}
 
-	if(attempt) {
-		int flagsmatch = flags_match(attempt->door, ip, tcp);
-		if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
-				dport == attempt->door->sequence[attempt->stage]) {
-			process_attempt(attempt);
-		} else if(flagsmatch == 0) {
-			/* TCP flags didn't match -- just ignore this packet, don't
-			 * invalidate the knock.
-			 */
-		} else {
-			/* invalidate the knock sequence, it will be removed in the
-			 * next sniff() call.
-			 */
-			attempt->stage = -1;
-		}
-	} else {
-		/* did they hit the first port correctly? */
-		for(lp = doors; lp; lp = lp->next) {
-			opendoor_t *door = (opendoor_t*)lp->data;
-			/* if we're working with TCP, try to match the flags */
-			if(!flags_match(door, ip, tcp)) {
-				continue;
-			}
-			if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
-			   !strcmp(dstIP, door->target ? door->target : myip)) {
-				struct hostent *he;
-				/* create a new entry */
-				attempt = (knocker_t*)malloc(sizeof(knocker_t));
-				attempt->srchost = NULL;
-				if(attempt == NULL) {
-					perror("malloc");
-					exit(1);
-				}
-				strcpy(attempt->src, srcIP);
-				/* try a reverse lookup if enabled  */
-				if (o_lookup) {
-					inaddr.s_addr = ip->ip_src.s_addr;
-					he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
-					if(he) {
-						attempt->srchost = strdup(he->h_name);
-					}
-				}
+	while (found_attempts != NULL) {
+		attempt = (knocker_t*)found_attempts->data;
 
-				attempt->stage = 0;
-				attempt->seq_start = pkt_secs;
-				attempt->door = door;
-				attempts = list_add(attempts, attempt);
+		if(attempt) {
+			int flagsmatch = flags_match(attempt->door, ip, tcp);
+			if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
+					dport == attempt->door->sequence[attempt->stage]) {
 				process_attempt(attempt);
+			} else if(flagsmatch == 0) {
+				/* TCP flags didn't match -- just ignore this packet, don't
+				 * invalidate the knock.
+				 */
+			} else {
+				/* invalidate the knock sequence, it will be removed in the
+				 * next sniff() call.
+				 */
+				attempt->stage = -1;
+			}
+		} else {
+			/* did they hit the first port correctly? */
+			for(lp = doors; lp; lp = lp->next) {
+				opendoor_t *door = (opendoor_t*)lp->data;
+				/* if we're working with TCP, try to match the flags */
+				if(!flags_match(door, ip, tcp)) {
+					continue;
+				}
+				if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
+				   !strcmp(dstIP, door->target ? door->target : myip)) {
+					struct hostent *he;
+					/* create a new entry */
+					attempt = (knocker_t*)malloc(sizeof(knocker_t));
+					attempt->srchost = NULL;
+					if(attempt == NULL) {
+						perror("malloc");
+						exit(1);
+					}
+					strcpy(attempt->src, srcIP);
+					/* try a reverse lookup if enabled  */
+					if (o_lookup) {
+						inaddr.s_addr = ip->ip_src.s_addr;
+						he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
+						if(he) {
+							attempt->srchost = strdup(he->h_name);
+						}
+					}
+
+					attempt->stage = 0;
+					attempt->seq_start = pkt_secs;
+					attempt->door = door;
+					attempts = list_add(attempts, attempt);
+					process_attempt(attempt);
+				}
 			}
 		}
+
+		found_attempts = found_attempts->next;
 	}
 }
 

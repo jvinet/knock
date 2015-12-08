@@ -1,5 +1,7 @@
 VERSION         DESCRIPTION
 -----------------------------------------------------------------------------
+0.7.6         - Fix for Issue #13 where similar sequences are not detected
+                correctly.
 0.7.5         - Added Greg Kuchyt's knock_add script but updated to be a
                 generic IPTables helper that also deletes rules
 0.7.4         - Patches from Michael Göhler

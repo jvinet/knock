@@ -13,10 +13,9 @@
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
  *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
- *  USA.
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
 #include <stdio.h>
@@ -32,12 +31,12 @@
 #include <sys/socket.h>
 #include <netinet/in_systm.h>
 #include <netinet/in.h>
-#include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <net/if.h>
+#include <netinet/if_ether.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
@@ -49,7 +48,7 @@
 #include <errno.h>
 #include "list.h"
 
-static char version[] = "0.7";
+static char version[] = "0.7.6";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */
@@ -220,9 +219,11 @@ int main(int argc, char **argv)
 		case DLT_EN10MB:
 			dprint("ethernet interface detected\n");
 			break;
+#ifdef __linux__
 		case DLT_LINUX_SLL:
 			dprint("ppp interface detected (linux \"cooked\" encapsulation)\n");
 			break;
+#endif
 		case DLT_RAW:
 			dprint("raw interface detected, no encapsulation\n");
 			break;
@@ -386,19 +387,29 @@ void reload(int signum)
 	}
 	list_free(doors);
 
-	parseconfig(o_cfg);
+	vprint("Closing log file: %s\n", o_logfile);
+	logprint("Closing log file: %s\n", o_logfile);
 
-	vprint("Closing and re-opening log file: %s\n", o_logfile);
-	logprint("Closing and re-opening log file: %s\n", o_logfile);
-
-	/* close and re-open the log file */
+	/* close the log file */
 	if(logfd) {
 		fclose(logfd);
 	}
+
+	if(parseconfig(o_cfg)) {
+		exit(1);
+	}
+
+	vprint("Re-opening log file: %s\n", o_logfile);
+	logprint("Re-opening log file: %s\n", o_logfile);
+
+	/* re-open the log file */
 	logfd = fopen(o_logfile, "a");
 	if(logfd == NULL) {
 		perror("warning: cannot open logfile");
 	}
+
+	/* Fix issue #2 by regenerating the PCAP filter post config file re-read */
+	generate_pcap_filter();
 
 	return;
 }
@@ -1366,7 +1377,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	struct tcphdr* tcp = NULL;
 	struct udphdr* udp = NULL;
 	char proto[8];
-	/* TCP/IP data */	
+	/* TCP/IP data */
 	struct in_addr inaddr;
 	unsigned short sport, dport;
 	char srcIP[16], dstIP[16];
@@ -1377,6 +1388,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	char pkt_time[9];
 	PMList *lp;
 	knocker_t *attempt = NULL;
+	PMList *found_attempts = NULL;
 
 	if(lltype == DLT_EN10MB) {
 		eth = (struct ether_header*)packet;
@@ -1440,24 +1452,38 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			proto, srcIP, sport, dstIP, dport, hdr->len);
 
 	/* clean up expired/completed/failed attempts */
-	for(lp = attempts; lp; lp = lp->next) {
-		int nix = 0;
+	lp = attempts;
+	while(lp != NULL) {
+		int nix = 0; /* Clear flag */
+		PMList *lpnext = lp->next;
+
 		attempt = (knocker_t*)lp->data;
+
+		/* Check if the sequence has been completed */
 		if(attempt->stage >= attempt->door->seqcount) {
 			dprint("removing successful knock attempt (%s)\n", attempt->src);
 			nix = 1;
 		}
+
+		/* Signed integer overflow check.
+		   If we received more than 32767 packets the sign will be negative*/
 		if(attempt->stage < 0) {
 			dprint("removing failed knock attempt (%s)\n", attempt->src);
 			nix = 1;
 		}
+
+		/* Check if timeout has been reached */
 		if(!nix && (pkt_secs - attempt->seq_start) >= attempt->door->seq_timeout) {
+
+			/* Do we know the hostname? */
 			if(attempt->srchost) {
+				/* Log the hostname */
 				vprint("%s (%s): %s: sequence timeout (stage %d)\n", attempt->src, attempt->srchost,
 						attempt->door->name, attempt->stage);
 				logprint("%s (%s): %s: sequence timeout (stage %d)\n", attempt->src, attempt->srchost,
 						attempt->door->name, attempt->stage);
 			} else {
+				/* Log the IP */
 				vprint("%s: %s: sequence timeout (stage %d)\n", attempt->src,
 						attempt->door->name, attempt->stage);
 				logprint("%s: %s: sequence timeout (stage %d)\n", attempt->src,
@@ -1465,17 +1491,23 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			}
 			nix = 1;
 		}
+
+		/* If clear flag is set */
 		if(nix) {
-			knocker_t *k = (knocker_t*)lp->data;
 			/* splice this entry out of the list */
 			if(lp->prev) lp->prev->next = lp->next;
 			if(lp->next) lp->next->prev = lp->prev;
+			/* If lp is the only element of the list then empty the list */
 			if(lp == attempts) attempts = NULL;
 			lp->prev = lp->next = NULL;
-			free(k->srchost);
+			if (attempt->srchost) {
+				free(attempt->srchost);
+				attempt->srchost = NULL;
+			}
 			list_free(lp);
-			continue;
 		}
+
+		lp = lpnext;
 	}
 
 	attempt = NULL;
@@ -1484,61 +1516,68 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		knocker_t *att = (knocker_t*)lp->data;
 		if(!strncmp(att->src, srcIP, sizeof(srcIP)) &&
 		   !strncmp(att->door->target ? att->door->target : myip, dstIP, sizeof(dstIP))) {
-			attempt = att;
-			break;
+/*			attempt = att;
+ *			break;
+ */			found_attempts = list_add(found_attempts, att);
 		}
 	}
 
-	if(attempt) {
-		int flagsmatch = flags_match(attempt->door, ip, tcp);
-		if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
-				dport == attempt->door->sequence[attempt->stage]) {
-			process_attempt(attempt);
-		} else if(flagsmatch == 0) {
-			/* TCP flags didn't match -- just ignore this packet, don't
-			 * invalidate the knock.
-			 */
-		} else {
-			/* invalidate the knock sequence, it will be removed in the
-			 * next sniff() call.
-			 */
-			attempt->stage = -1;
-		}
-	} else {
-		/* did they hit the first port correctly? */
-		for(lp = doors; lp; lp = lp->next) {
-			opendoor_t *door = (opendoor_t*)lp->data;
-			/* if we're working with TCP, try to match the flags */
-			if(!flags_match(door, ip, tcp)) {
-				continue;
-			}
-			if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
-			   !strcmp(dstIP, door->target ? door->target : myip)) {
-				struct hostent *he;
-				/* create a new entry */
-				attempt = (knocker_t*)malloc(sizeof(knocker_t));
-				attempt->srchost = NULL;
-				if(attempt == NULL) {
-					perror("malloc");
-					exit(1);
-				}
-				strcpy(attempt->src, srcIP);
-				/* try a reverse lookup if enabled  */
-				if (o_lookup) {
-					inaddr.s_addr = ip->ip_src.s_addr;
-					he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
-					if(he) {
-						attempt->srchost = strdup(he->h_name);
-					}
-				}
+	while (found_attempts != NULL) {
+		attempt = (knocker_t*)found_attempts->data;
 
-				attempt->stage = 0;
-				attempt->seq_start = pkt_secs;
-				attempt->door = door;
-				attempts = list_add(attempts, attempt);
+		if(attempt) {
+			int flagsmatch = flags_match(attempt->door, ip, tcp);
+			if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
+					dport == attempt->door->sequence[attempt->stage]) {
 				process_attempt(attempt);
+			} else if(flagsmatch == 0) {
+				/* TCP flags didn't match -- just ignore this packet, don't
+				 * invalidate the knock.
+				 */
+			} else {
+				/* invalidate the knock sequence, it will be removed in the
+				 * next sniff() call.
+				 */
+				attempt->stage = -1;
+			}
+		} else {
+			/* did they hit the first port correctly? */
+			for(lp = doors; lp; lp = lp->next) {
+				opendoor_t *door = (opendoor_t*)lp->data;
+				/* if we're working with TCP, try to match the flags */
+				if(!flags_match(door, ip, tcp)) {
+					continue;
+				}
+				if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
+				   !strcmp(dstIP, door->target ? door->target : myip)) {
+					struct hostent *he;
+					/* create a new entry */
+					attempt = (knocker_t*)malloc(sizeof(knocker_t));
+					attempt->srchost = NULL;
+					if(attempt == NULL) {
+						perror("malloc");
+						exit(1);
+					}
+					strcpy(attempt->src, srcIP);
+					/* try a reverse lookup if enabled  */
+					if (o_lookup) {
+						inaddr.s_addr = ip->ip_src.s_addr;
+						he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
+						if(he) {
+							attempt->srchost = strdup(he->h_name);
+						}
+					}
+
+					attempt->stage = 0;
+					attempt->seq_start = pkt_secs;
+					attempt->door = door;
+					attempts = list_add(attempts, attempt);
+					process_attempt(attempt);
+				}
 			}
 		}
+
+		found_attempts = found_attempts->next;
 	}
 }
 

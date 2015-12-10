@@ -42,13 +42,14 @@
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <ifaddrs.h>
 #include <getopt.h>
 #include <syslog.h>
 #include <pcap.h>
 #include <errno.h>
 #include "list.h"
 
-static char version[] = "0.7.6";
+static char version[] = "0.7.7";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */
@@ -120,11 +121,18 @@ char* get_ip(const char *iface, char *buf, int bufsize);
 size_t parse_cmd(char *dest, size_t size, const char *command, const char *src);
 int exec_cmd(char *command, char *name);
 void sniff(u_char *arg, const struct pcap_pkthdr *hdr, const u_char *packet);
+int target_strcmp(char *ip, char *target);
 
 pcap_t *cap = NULL;
 FILE *logfd = NULL;
 int lltype = -1;
-char myip[32];
+/* list of IP addresses for given interface
+ */
+typedef struct ip_literal {
+	struct ip_literal *next;
+	char *value;
+} ip_literal_t;
+ip_literal_t *myips = NULL;
 
 int  o_usesyslog = 0;
 int  o_verbose   = 0;
@@ -138,6 +146,8 @@ char o_logfile[PATH_MAX] = "";
 
 int main(int argc, char **argv)
 {
+	struct ifaddrs *ifaddr, *ifa;
+	ip_literal_t *myip;
 	char pcapErr[PCAP_ERRBUF_SIZE] = "";
 	int opt, ret, optidx = 1;
 
@@ -233,12 +243,34 @@ int main(int argc, char **argv)
 			break;
 	}
 
-	/* get our local IP address */
-	if(get_ip(o_int, myip, 32) == NULL) {
-		fprintf(stderr, "could not get IP address for %s\n", o_int);
+	/* get our local IP addresses */
+	if(getifaddrs(&ifaddr) != 0) {
+		fprintf(stderr, "error: could not get IP address for %s: %s\n", o_int, strerror(errno));
 		cleanup(1);
 	} else {
-		dprint("Local IP: %s\n", myip);
+		for(ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+			if (ifa->ifa_addr == NULL)
+				continue;
+
+			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET)) {
+				if((myip = calloc(1, sizeof(ip_literal_t))) == NULL) {
+					perror("malloc");
+					exit(1);
+				} else {
+					if(getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in), myip->value, NI_MAXHOST, NULL, 0, NI_NUMERICHOST) != 0) {
+						fprintf(stderr, "error: could not get IP address for %s: %s\n", o_int, strerror(errno));
+						freeifaddrs(ifaddr);
+						cleanup(1);
+					} else {
+						if(myips)
+							myip->next = myips;
+						myips = myip;
+						dprint("Local IP: %s\n", myip->value);
+					}
+				}
+			}
+		}
+		freeifaddrs(ifaddr);
 	}
 
 	generate_pcap_filter();
@@ -350,6 +382,7 @@ void dprint_sequence(opendoor_t *door, char *fmt, ...)
 /* Signal handlers */
 void cleanup(int signum)
 {
+	ip_literal_t *myip = myips;
 	int status;
 
 	vprint("waiting for child processes...\n");
@@ -362,6 +395,16 @@ void cleanup(int signum)
 	if(o_daemon) {
 		unlink(o_pidfile);
 	}
+
+	if(myips) {
+		while(myips) {
+			if(myip->value)
+				free(myip->value);
+			myips = myip->next;
+			free(myip);
+		}
+	}
+
 	exit(signum);
 }
 
@@ -377,6 +420,7 @@ void reload(int signum)
 {
 	PMList *lp;
 	opendoor_t *door;
+	int res_cfg;
 
 	vprint("Re-reading config file: %s\n", o_cfg);
 	logprint("Re-reading config file: %s\n", o_cfg);
@@ -387,6 +431,8 @@ void reload(int signum)
 	}
 	list_free(doors);
 
+	res_cfg = parseconfig(o_cfg);
+
 	vprint("Closing log file: %s\n", o_logfile);
 	logprint("Closing log file: %s\n", o_logfile);
 
@@ -395,7 +441,7 @@ void reload(int signum)
 		fclose(logfd);
 	}
 
-	if(parseconfig(o_cfg)) {
+	if(res_cfg) {
 		exit(1);
 	}
 
@@ -820,6 +866,7 @@ void generate_pcap_filter()
 {
 	PMList *lp;
 	opendoor_t *door;
+	ip_literal_t *myip;
 	char *buffer = NULL;   /* temporary buffer to create the individual filter strings */ 
 	size_t bufsize = 0;    /* size of buffer */
 	char port_str[10];     /* used by snprintf to convert unsigned short --> string */
@@ -863,9 +910,19 @@ void generate_pcap_filter()
 			buffer[0] = '\0';
 		}
 
-		bufsize = realloc_strcat(&buffer, "(dst host ", bufsize);	/* accept only incoming packets */
-		bufsize = realloc_strcat(&buffer, door->target ? door->target : myip, bufsize);
-		bufsize = realloc_strcat(&buffer, " and (", bufsize);
+		/* accept only incoming packets */
+		for(myip = myips; myip != NULL; myip = myip->next) {
+			if(!head_set) {
+				bufsize = realloc_strcat(&buffer, "((dst host ", bufsize);
+				head_set = 1;
+			} else {
+				bufsize = realloc_strcat(&buffer, " or dst host ", bufsize);
+			}
+			bufsize = realloc_strcat(&buffer, door->target ? door->target : myip->value, bufsize);
+		}
+
+		bufsize = realloc_strcat(&buffer, ") and (", bufsize);
+		head_set = 0;
 
 		/* generate filter for all TCP ports (i.e. "((tcp dst port 4000 or 4001 or 4002) and tcp[tcpflags] & tcp-syn != 0)" */
 		for(i = 0; i < door->seqcount; i++) {
@@ -1514,11 +1571,9 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	/* look for this guy in our attempts list */
 	for(lp = attempts; lp; lp = lp->next) {
 		knocker_t *att = (knocker_t*)lp->data;
-		if(!strncmp(att->src, srcIP, sizeof(srcIP)) &&
-		   !strncmp(att->door->target ? att->door->target : myip, dstIP, sizeof(dstIP))) {
-/*			attempt = att;
- *			break;
- */			found_attempts = list_add(found_attempts, att);
+		if(!strcmp(srcIP, att->src) &&
+		   !target_strcmp(dstIP, att->door->target)) {
+			found_attempts = list_add(found_attempts, att);
 		}
 	}
 
@@ -1549,7 +1604,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					continue;
 				}
 				if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
-				   !strcmp(dstIP, door->target ? door->target : myip)) {
+				   !target_strcmp(dstIP, door->target)) {
 					struct hostent *he;
 					/* create a new entry */
 					attempt = (knocker_t*)malloc(sizeof(knocker_t));
@@ -1579,6 +1634,25 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 
 		found_attempts = found_attempts->next;
 	}
+}
+
+/* Compare ip against door target or all ips of our local interface
+ */
+int target_strcmp(char *ip, char *target) {
+	ip_literal_t *myip;
+
+	if(target && !strcmp(ip, target))
+		return 0;
+
+	if (target)
+		return 1;
+
+	for(myip = myips; myip != NULL; myip = myip->next) {
+		if(!strcmp(ip, myip->value))
+			return 0;
+	}
+
+	return 1;
 }
 
 /* vim: set ts=2 sw=2 noet: */

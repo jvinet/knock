@@ -18,6 +18,13 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+#if __APPLE__
+// In MacOSX 10.5+, the daemon function is deprecated and will give a warning.
+// This nasty hack which is used by Apple themselves in mDNSResponder does
+// the trick.
+#define daemon deprecated_in_osx_10_5_and_up
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -48,6 +55,11 @@
 #include <pcap.h>
 #include <errno.h>
 #include "list.h"
+
+#if __APPLE__
+#undef daemon
+extern int daemon(int, int);
+#endif
 
 static char version[] = "0.7.7";
 

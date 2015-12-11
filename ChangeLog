@@ -1,5 +1,8 @@
 VERSION         DESCRIPTION
 -----------------------------------------------------------------------------
+0.7.7         - Fix for Issue #7 & #17 contributed by Michael G�hler.
+                All IPs assigned to a single interface are now listened on.
+              - Fix for compile warning on OSX where daemon() is deprecated.
 0.7.6         - Fix for Issue #13 where similar sequences are not detected
                 correctly.
 0.7.5         - Added Greg Kuchyt's knock_add script but updated to be a

@@ -27,7 +27,7 @@ PMList* list_new()
 {
 	PMList *list = NULL;
 	
-	list = (PMList*)malloc(sizeof(PMList));
+	list = (PMList*)calloc(1, sizeof(PMList));
 	if(list == NULL) {
 		return(NULL);
 	}

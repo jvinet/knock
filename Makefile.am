@@ -1,5 +1,5 @@
 AM_CPPFLAGS=-D_DEFAULT_SOURCE
-AM_CFLAGS=-g -Wall -pedantic -fno-exceptions
+AM_CFLAGS=-g -Wall -pedantic -fno-exceptions -D_BSD_SOURCE
 
 bin_PROGRAMS = knock
 man_MANS = doc/knock.1

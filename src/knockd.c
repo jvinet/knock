@@ -269,6 +269,9 @@ int main(int argc, char **argv)
 				if((myip = calloc(1, sizeof(ip_literal_t))) == NULL) {
 					perror("malloc");
 					exit(1);
+				} else if ((myip->value = calloc(1,NI_MAXHOST)) == NULL) {
+					perror("malloc");
+					exit(1);
 				} else {
 					if(getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in), myip->value, NI_MAXHOST, NULL, 0, NI_NUMERICHOST) != 0) {
 						fprintf(stderr, "error: could not get IP address for %s: %s\n", o_int, strerror(errno));

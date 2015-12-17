@@ -19,9 +19,10 @@
  */
 
 #if __APPLE__
-// In MacOSX 10.5+, the daemon function is deprecated and will give a warning.
-// This nasty hack which is used by Apple themselves in mDNSResponder does
-// the trick.
+/* In MacOSX 10.5+, the daemon function is deprecated and will give a warning.
+ * This nasty hack which is used by Apple themselves in mDNSResponder does
+ * the trick.
+ */
 #define daemon deprecated_in_osx_10_5_and_up
 #endif
 

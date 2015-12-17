@@ -19,9 +19,9 @@
  */
 
 #if __APPLE__
-// In MacOSX 10.5+, the daemon function is deprecated and will give a warning.
-// This nasty hack which is used by Apple themselves in mDNSResponder does
-// the trick.
+/* In MacOSX 10.5+, the daemon function is deprecated and will give a warning.
+ * This nasty hack which is used by Apple themselves in mDNSResponder does
+ * the trick. */
 #define daemon deprecated_in_osx_10_5_and_up
 #endif
 
@@ -266,6 +266,9 @@ int main(int argc, char **argv)
 
 			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET)) {
 				if((myip = calloc(1, sizeof(ip_literal_t))) == NULL) {
+					perror("malloc");
+					exit(1);
+				} else if ((myip->value = calloc(1, NI_MAXHOST)) == NULL) {
 					perror("malloc");
 					exit(1);
 				} else {

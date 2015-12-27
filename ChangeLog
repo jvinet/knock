@@ -1,5 +1,7 @@
 VERSION         DESCRIPTION
 -----------------------------------------------------------------------------
+0.7.8         - Fix for Issue #33, #34 and #35 contributed by Alexander
+                Rumyanstev.
 0.7.7         - Fix for Issue #7 & #17 contributed by Michael G�hler.
                 All IPs assigned to a single interface are now listened on.
               - Fix for compile warning on OSX where daemon() is deprecated.
@@ -17,11 +19,11 @@ VERSION         DESCRIPTION
                 - Fixed PCAP filter for PSH flag detection.
               - Patches from Christos Triantafyllidis
                 - Updated FSF address.
-0.7.2         - Patches from Paul Rogers (paul.rogers@flumps.org)
+0.7.2         - Patches from Paul Rogers
                 - Applied missing fixes from issue #16 - OpenBSD build
                   issues, reordering of headers, scoping DLT_LINUX_SLL for
                   Linux only, for -> while loop in sniff() cleanup.
-0.7.1         - Patches from Paul Rogers (paul.rogers@flumps.org)
+0.7.1         - Patches from Paul Rogers
                 - Fixed issue #2 - SIGHUP (reload) now listens for new
                   sequences in the config file.
                 - Fixed issue #26 - knockd now fails if a malformed config

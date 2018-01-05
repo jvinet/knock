@@ -159,6 +159,7 @@ int  o_verbose   = 0;
 int  o_debug     = 0;
 int  o_daemon    = 0;
 int  o_lookup    = 0;
+int  o_skipIpV6  = 0;
 char o_int[32]           = "";		/* default (eth0) is set after parseconfig() */
 char o_cfg[PATH_MAX]     = "/etc/knockd.conf";
 char o_pidfile[PATH_MAX] = "/var/run/knockd.pid";
@@ -182,11 +183,12 @@ int main(int argc, char **argv)
 		{"help",      no_argument,       0, 'h'},
 		{"pidfile",   required_argument, 0, 'p'},
 		{"logfile",   required_argument, 0, 'g'},
+		{"only-ip-v4",no_argument,       0, '4'},
 		{"version",   no_argument,       0, 'V'},
 		{0, 0, 0, 0}
 	};
 	
-	while((opt = getopt_long(argc, argv, "vDdli:c:p:g:hV", opts, &optidx))) {
+	while((opt = getopt_long(argc, argv, "4vDdli:c:p:g:hV", opts, &optidx))) {
 		if(opt < 0) {
 			break;
 		}
@@ -196,6 +198,7 @@ int main(int argc, char **argv)
 			case 'D': o_debug = 1; break;
 			case 'd': o_daemon = 1; break;
 			case 'l': o_lookup = 1; break;
+			case '4': o_skipIpV6 = 1; break;
 			case 'i': strncpy(o_int, optarg, sizeof(o_int)-1);
 								o_int[sizeof(o_int)-1] = '\0';
 								break;
@@ -272,7 +275,7 @@ int main(int argc, char **argv)
 			if (ifa->ifa_addr == NULL)
 				continue;
 
-			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6)) {
+			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skipIpV6))) {
 				if (ifa->ifa_addr->sa_family == AF_INET6)
 					hasIpV6 = 1;
 				if((myip = calloc(1, sizeof(ip_literal_t))) == NULL) {
@@ -503,6 +506,7 @@ void usage(int exit_code) {
 	printf("  -p, --pidfile          use an alternate pidfile\n");
 	printf("  -g, --logfile          use an alternate logfile\n");
 	printf("  -v, --verbose          be verbose\n");
+	printf("  -4, --only-ip-v4       do not track ipv6\n");
 	printf("  -V, --version          display version\n");
 	printf("  -h, --help             this help\n");
 	printf("\n");
@@ -936,6 +940,9 @@ void generate_pcap_filter()
 	 */
 	for (ipv6 = 0 ; ipv6 <=1 ; ipv6++)
 	{
+		if (ipv6 && o_skipIpV6)
+			continue;
+		
 		for(lp = doors; lp; lp = lp->next) {
 			door = (opendoor_t*)lp->data;
 
@@ -1154,6 +1161,8 @@ void generate_pcap_filter()
 			door = (opendoor_t*)lp->data;
 			for (ipv6 = 0 ; ipv6 <= 1 ; ipv6++)
 			{
+				if (ipv6 && o_skipIpV6)
+					continue;
 				if (ipv6)
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_expv6, bufsize);
 				else

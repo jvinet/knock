@@ -40,6 +40,10 @@ static char version[] = "0.7";
 #define PROTO_TCP 1
 #define PROTO_UDP 2
 
+#define IP_DEFAULT AF_UNSPEC
+#define IP_V4 AF_INET
+#define IP_V6 AF_INET6
+
 /* function prototypes */
 void vprint(char *fmt, ...);
 void ver();
@@ -48,13 +52,32 @@ void usage();
 int o_verbose = 0;
 int o_udp     = 0;
 int o_delay   = 0;
+int o_ip      = IP_DEFAULT;
+
+int txt_to_ip_version(const char * value)
+{
+	int n = atoi(value);
+	
+	if (n == 4)
+	{
+		return IP_V4;
+	} else if (n == 6) {
+		return IP_V6;
+	} else {
+		fprintf(stderr,"Invalid IP protocol version %d, should be 4 or 6 !",n);
+		exit(1);
+	}
+}
 
 int main(int argc, char** argv)
 {
 	int sd;
-	struct hostent* host;
-	struct sockaddr_in addr;
 	int opt, optidx = 1;
+	struct addrinfo hints;
+	struct addrinfo *infoptr;
+	char ipname[256];
+	int result;
+	char * hostname;
 	static struct option opts[] =
 	{
 		{"verbose",   no_argument,       0, 'v'},
@@ -62,10 +85,11 @@ int main(int argc, char** argv)
 		{"delay",     required_argument, 0, 'd'},
 		{"help",      no_argument,       0, 'h'},
 		{"version",   no_argument,       0, 'V'},
+		{"ip",        required_argument, 0, 'i'},
 		{0, 0, 0, 0}
 	};
 
-	while((opt = getopt_long(argc, argv, "vud:hV", opts, &optidx))) {
+	while((opt = getopt_long(argc, argv, "vud:hVi:", opts, &optidx))) {
 		if(opt < 0) {
 			break;
 		}
@@ -75,6 +99,7 @@ int main(int argc, char** argv)
 			case 'u': o_udp = 1; break;
 			case 'd': o_delay = (int)atoi(optarg); break;
 			case 'V': ver();
+			case 'i': o_ip = txt_to_ip_version(optarg); break;
 			case 'h': /* fallthrough */
 			default: usage();
 		}
@@ -88,18 +113,20 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 
-	host = gethostbyname(argv[optind++]);
-	if(host == NULL) {
-		fprintf(stderr, "Cannot resolve hostname\n");
-		exit(1);
-	}
+	//prepare hints to select ipv4 or v6 if asked
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = o_ip;
+	hostname = argv[optind++];
+	
 	for(; optind < argc; optind++) {
-		unsigned short port, proto = PROTO_TCP;
+		const char * port;
+		unsigned short proto = PROTO_TCP;
 		char *ptr, *arg = strdup(argv[optind]);
-
+		
+		//select TCP/UDP protocol
 		if((ptr = strchr(arg, ':'))) {
 			*ptr = '\0';
-			port = atoi(arg);
+			port = arg;
 			arg = ++ptr;
 			if(!strcmp(arg, "udp")) {
 				proto = PROTO_UDP;
@@ -107,18 +134,27 @@ int main(int argc, char** argv)
 				proto = PROTO_TCP;
 			}
 		} else {
-			port = atoi(arg);
+			port = arg;
 		}
 
+		//get host and port based on hints
+		result = getaddrinfo(hostname, port, &hints, &infoptr);
+		if(result) {
+			fprintf(stderr, "Fail to resolve hostname '%s' on port %s\n",hostname,port);
+			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
+			exit(1);
+		}
+		
+		//create socket
 		if(o_udp || proto == PROTO_UDP) {
-			sd = socket(PF_INET, SOCK_DGRAM, 0);
+			sd = socket(infoptr->ai_family, SOCK_DGRAM, 0);
 			if(sd == -1) {
 				fprintf(stderr, "Cannot open socket\n");
 				exit(1);
 			}
 		} else {
 			int flags;
-			sd = socket(PF_INET, SOCK_STREAM, 0);
+			sd = socket(infoptr->ai_family, SOCK_STREAM, 0);
 			if(sd == -1) {
 				fprintf(stderr, "Cannot open socket\n");
 				exit(1);
@@ -126,19 +162,27 @@ int main(int argc, char** argv)
 			flags = fcntl(sd, F_GETFL, 0);
 			fcntl(sd, F_SETFL, flags | O_NONBLOCK);
 		}
-		memset(&addr, 0, sizeof(addr));
-		addr.sin_family = AF_INET;
-		addr.sin_addr.s_addr = *((long*)host->h_addr_list[0]);
-		addr.sin_port = htons(port);
+
+		//extract ip as string (v4 or v6)
+		getnameinfo(infoptr->ai_addr, infoptr->ai_addrlen, ipname, sizeof(ipname), NULL, 0, NI_NUMERICHOST);
+		
+		//connect or send UDP packet
 		if(o_udp || proto == PROTO_UDP) {
-			vprint("hitting udp %s:%u\n", inet_ntoa(addr.sin_addr), port);
-			sendto(sd, "", 1, 0, (struct sockaddr*)&addr, sizeof(addr));
+			vprint("hitting udp %s:%s\n", ipname, port);
+			sendto(sd, "", 1, 0, infoptr->ai_addr, infoptr->ai_addrlen);
 		} else {
-			vprint("hitting tcp %s:%u\n", inet_ntoa(addr.sin_addr), port);
-			connect(sd, (struct sockaddr*)&addr, sizeof(struct sockaddr));
+			vprint("hitting tcp %s:%s\n", ipname, port);
+			connect(sd, infoptr->ai_addr, infoptr->ai_addrlen);
 		}
+		
+		//close socket
 		close(sd);
+		
+		//wait delay
 		usleep(1000*o_delay);
+		
+		//free temp mem
+		freeaddrinfo(infoptr);
 	}
 
 	return(0);

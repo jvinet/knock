@@ -117,6 +117,27 @@ sniffing the network).
 	stop_command       = /usr/sbin/iptables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
 	
 .fi
+.TP
+.SH Example #4:
+.RS
+Example to support IPv4 and IPv6. You can provide a dedicated command for each
+of the two protocols.
+
+.nf
+[options]
+	logfile = /var/log/knockd.log
+
+[opencloseSMTP]
+	one_time_sequences = /etc/knockd/smtp_sequences
+	seq_timeout        = 15
+	tcpflags           = fin,!ack
+	start_command      = /usr/sbin/iptables \-A INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	start_command6     = /usr/sbin/ip6tables \-A INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	cmd_timeout        = 5
+	stop_command       = /usr/sbin/iptables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	stop_command6      = /usr/sbin/ip6tables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	
+.fi
 .RE
 .SH CONFIGURATION: GLOBAL DIRECTIVES
 .TP

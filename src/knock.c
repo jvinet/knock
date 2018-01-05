@@ -204,6 +204,7 @@ void usage() {
 	printf("options:\n");
 	printf("  -u, --udp            make all ports hits use UDP (default is TCP)\n");
 	printf("  -d, --delay <t>      wait <t> milliseconds between port hits\n");
+	printf("  -i, --ip <version>   IP version to be used (4 or 6)\n");
 	printf("  -v, --verbose        be verbose\n");
 	printf("  -V, --version        display version\n");
 	printf("  -h, --help           this help\n");

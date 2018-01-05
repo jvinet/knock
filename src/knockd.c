@@ -84,8 +84,10 @@ typedef struct opendoor {
 	char *target;
 	time_t seq_timeout;
 	char *start_command;
+	char *start_command6;
 	time_t cmd_timeout;
 	char *stop_command;
+	char *stop_command6;
 	flag_stat flag_fin;
 	flag_stat flag_syn;
 	flag_stat flag_rst;
@@ -107,6 +109,7 @@ typedef struct knocker {
 	char src[64];   /* IP address */
 	char *srchost;  /* Hostname */
 	time_t seq_start;
+	int fromIpV6;
 } knocker_t;
 PMList *attempts = NULL;
 
@@ -594,8 +597,10 @@ int parseconfig(char *configfile)
 				door->seqcount = 0;
 				door->seq_timeout  = SEQ_TIMEOUT; /* default sequence timeout (seconds)  */
 				door->start_command = NULL;
+				door->start_command6 = NULL;
 				door->cmd_timeout = CMD_TIMEOUT; /* default command timeout (seconds) */
 				door->stop_command = NULL;
+				door->stop_command6 = NULL;
 				door->one_time_sequences_fd = NULL;
 				door->pcap_filter_exp = NULL;
 				door->pcap_filter_expv6 = NULL;
@@ -689,6 +694,14 @@ int parseconfig(char *configfile)
 						}
 						strcpy(door->start_command, ptr);
 						dprint("config: %s: start_command: %s\n", door->name, door->start_command);
+					} else if(!strcmp(key, "START_COMMAND6") || !strcmp(key, "COMMAND6")) {
+						door->start_command6 = malloc(sizeof(char) * (strlen(ptr)+1));
+						if(door->start_command6 == NULL) {
+							perror("malloc");
+							exit(1);
+						}
+						strcpy(door->start_command6, ptr);
+						dprint("config: %s: start_command6: %s\n", door->name, door->start_command6);
 					} else if(!strcmp(key, "CMD_TIMEOUT")) {
 						door->cmd_timeout = (time_t)atoi(ptr);
 						dprint("config: %s: cmd_timeout: %d\n", door->name, door->cmd_timeout);
@@ -700,6 +713,14 @@ int parseconfig(char *configfile)
 						}
 						strcpy(door->stop_command, ptr);
 						dprint("config: %s: stop_command: %s\n", door->name, door->stop_command);
+					} else if(!strcmp(key, "STOP_COMMAND6")) {
+						door->stop_command6 = malloc(sizeof(char) * (strlen(ptr)+1));
+						if(door->stop_command6 == NULL) {
+							perror("malloc");
+							exit(1);
+						}
+						strcpy(door->stop_command6, ptr);
+						dprint("config: %s: stop_command6: %s\n", door->name, door->stop_command6);
 					} else if(!strcmp(key, "TCPFLAGS")) {
 						char *flag;
 						strtoupper(ptr);
@@ -1424,6 +1445,20 @@ int flags_match(opendoor_t* door, int ipTPoto, struct tcphdr* tcp)
  */
 void process_attempt(knocker_t *attempt)
 {
+	//select
+	char * start_command;
+	char * stop_command;
+	
+	//select
+	if (attempt->fromIpV6)
+	{
+		start_command = attempt->door->start_command6;
+		stop_command = attempt->door->stop_command6;
+	} else {
+		start_command = attempt->door->start_command;
+		stop_command = attempt->door->stop_command;
+	}
+	
 	/* level up! */
 	attempt->stage++;
 	if(attempt->srchost) {
@@ -1441,7 +1476,7 @@ void process_attempt(knocker_t *attempt)
 			vprint("%s: %s: OPEN SESAME\n", attempt->src, attempt->door->name);
 			logprint("%s: %s: OPEN SESAME", attempt->src, attempt->door->name);
 		}
-		if(attempt->door->start_command && strlen(attempt->door->start_command)) {
+		if(start_command && strlen(start_command)) {
 			/* run the associated command */
 			if(fork() == 0) {
 				/* child */
@@ -1453,14 +1488,14 @@ void process_attempt(knocker_t *attempt)
 
 				/* parse start and stop command and check if the parsed commands fit in the given buffer. Don't
 				 * execute any command if one of them has been truncated */
-				cmd_len = parse_cmd(parsed_start_cmd, sizeof(parsed_start_cmd), attempt->door->start_command, attempt->src);
+				cmd_len = parse_cmd(parsed_start_cmd, sizeof(parsed_start_cmd), start_command, attempt->src);
 				if(cmd_len >= sizeof(parsed_start_cmd)) {	/* command has been truncated --> do NOT execute it */
 					fprintf(stderr, "error: parsed start command has been truncated! --> won't execute it\n");
 					logprint("error: parsed start command has been truncated! --> won't execute it");
 					exit(0); /* exit child */
 				}
-				if(attempt->door->stop_command) {
-					cmd_len = parse_cmd(parsed_stop_cmd, sizeof(parsed_stop_cmd), attempt->door->stop_command, attempt->src);
+				if(stop_command) {
+					cmd_len = parse_cmd(parsed_stop_cmd, sizeof(parsed_stop_cmd), stop_command, attempt->src);
 					if(cmd_len >= sizeof(parsed_stop_cmd)) {	/* command has been truncated --> do NOT execute it */
 						fprintf(stderr, "error: parsed stop command has been truncated! --> won't execute start command\n");
 						logprint("error: parsed stop command has been truncated! --> won't execute start command");
@@ -1471,7 +1506,7 @@ void process_attempt(knocker_t *attempt)
 				/* all parsing ok --> execute the parsed (%IP% = source IP) command */
 				exec_cmd(parsed_start_cmd, attempt->door->name);
 				/* if stop_command is set, sleep for cmd_timeout and run it*/
-				if(attempt->door->stop_command){
+				if(stop_command){
 					sleep(attempt->door->cmd_timeout);
 					if(attempt->srchost) {
 						vprint("%s (%s): %s: command timeout\n", attempt->src, attempt->srchost, attempt->door->name);
@@ -1525,6 +1560,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	knocker_t *attempt = NULL;
 	PMList *found_attempts = NULL;
 	int ipProto;
+	int fromIpV6;
 
 	if(lltype == DLT_EN10MB) {
 		eth = (struct ether_header*)packet;
@@ -1559,6 +1595,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		}
 
 		sport = dport = 0;
+		fromIpV6 = 0;
 		ipProto = ip->ip_p;
 
 		if(ip->ip_p == IPPROTO_TCP) {
@@ -1582,6 +1619,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		}
 
 		ipProto = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
+		fromIpV6 = 1;
 		sport = dport = 0;
 
 		if(ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt == IPPROTO_TCP) {
@@ -1734,9 +1772,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 						perror("malloc");
 						exit(1);
 					}
+					attempt->fromIpV6 = fromIpV6;
 					strcpy(attempt->src, srcIP);
 					/* try a reverse lookup if enabled  */
-					if (o_lookup) {
+					//TODO support ipv6
+					if (o_lookup && fromIpV6 == 0) {
 						inaddr.s_addr = ip->ip_src.s_addr;
 						he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
 						if(he) {

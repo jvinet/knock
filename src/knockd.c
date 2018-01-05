@@ -293,7 +293,6 @@ int main(int argc, char **argv)
 						freeifaddrs(ifaddr);
 						cleanup(1);
 					} else {
-						printf("\n\n%s\n\n",myip->value);
 						char * ptr = strchr(myip->value,'%');
 						if (ptr != NULL)
 							*ptr = '\0';
@@ -1013,7 +1012,7 @@ void generate_pcap_filter()
 			if(tcp_present) {
 				if(door->flag_fin != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x01 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-fin ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-fin ", bufsize);
 					if(door->flag_fin == SET) {
@@ -1025,7 +1024,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_syn != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x02 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-syn ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-syn ", bufsize);
 					if(door->flag_syn == SET) {
@@ -1037,7 +1036,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_rst != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x04 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-rst ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-rst ", bufsize);
 					if(door->flag_rst == SET) {
@@ -1049,7 +1048,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_psh != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x08 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-push ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
 					if(door->flag_psh == SET) {
@@ -1061,7 +1060,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_ack != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x10 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-ack ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-ack ", bufsize);
 					if(door->flag_ack == SET) {
@@ -1073,7 +1072,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_urg != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x20 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-urg ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-urg ", bufsize);
 					if(door->flag_urg == SET) {
@@ -1158,22 +1157,23 @@ void generate_pcap_filter()
 	 */
 	if(modified_filters) {
 		/* iterate over all doors */
+		int first = 1;
 		for(lp = doors; lp; lp = lp->next) {
 			door = (opendoor_t*)lp->data;
 			for (ipv6 = 0 ; ipv6 <= 1 ; ipv6++)
 			{
+				if (first)
+					first = 0;
+				else
+					bufsize = realloc_strcat(&buffer, " or ", bufsize);
 				if (ipv6 && o_skipIpV6)
 					continue;
 				if (ipv6)
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_expv6, bufsize);
 				else
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);
-				bufsize = realloc_strcat(&buffer, " or ", bufsize);
 			}
 		}
-		
-		//track to avoid to remove last or.... to be improved
-		bufsize = realloc_strcat(&buffer, "(0==1)", bufsize);
 		
 		//dprint("FULL : %s\n",buffer);
 

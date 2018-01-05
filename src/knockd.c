@@ -426,15 +426,15 @@ void cleanup(int signum)
 	if(o_daemon) {
 		unlink(o_pidfile);
 	}
-
+	
 	if(myips) {
-//TODO find double free cause
-// 		while(myips) {
-// 			if(myip->value)
-// 				free(myip->value);
-// 			myips = myip->next;
-// 			free(myip);
-// 		}
+		while(myips) {
+			if(myip->value)
+				free(myip->value);
+			myips = myip->next;
+			free(myip);
+			myip = myips;
+		}
 	}
 
 	exit(signum);
@@ -1655,8 +1655,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		inet_ntop(AF_INET6, &ip6->ip6_src, srcIP,sizeof(srcIP));
 		inet_ntop(AF_INET6, &ip6->ip6_dst, dstIP,sizeof(srcIP));
 	} else {
-		//TODO comment
-		dprint("Invalid protocol (not ipv4 or ipv6) !");
+		//dprint("Invalid protocol (not ipv4 or ipv6) !");
 		return;
 	}
 
@@ -1775,10 +1774,14 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					attempt->fromIpV6 = fromIpV6;
 					strcpy(attempt->src, srcIP);
 					/* try a reverse lookup if enabled  */
-					//TODO support ipv6
-					if (o_lookup && fromIpV6 == 0) {
-						inaddr.s_addr = ip->ip_src.s_addr;
-						he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
+					if (o_lookup) {
+						if (fromIpV6 == 0)
+						{
+							inaddr.s_addr = ip->ip_src.s_addr;
+							he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
+						} else {
+							he = gethostbyaddr((void *)&ip6->ip6_src, sizeof(ip6->ip6_src), AF_INET6);
+						}
 						if(he) {
 							attempt->srchost = strdup(he->h_name);
 						}

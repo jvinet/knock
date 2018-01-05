@@ -293,6 +293,7 @@ int main(int argc, char **argv)
 						freeifaddrs(ifaddr);
 						cleanup(1);
 					} else {
+						printf("\n\n%s\n\n",myip->value);
 						char * ptr = strchr(myip->value,'%');
 						if (ptr != NULL)
 							*ptr = '\0';
@@ -698,14 +699,14 @@ int parseconfig(char *configfile)
 						}
 						strcpy(door->start_command, ptr);
 						dprint("config: %s: start_command: %s\n", door->name, door->start_command);
-					} else if(!strcmp(key, "START_COMMAND6") || !strcmp(key, "COMMAND6")) {
+					} else if(!strcmp(key, "START_COMMAND_6") || !strcmp(key, "COMMAND_6")) {
 						door->start_command6 = malloc(sizeof(char) * (strlen(ptr)+1));
 						if(door->start_command6 == NULL) {
 							perror("malloc");
 							exit(1);
 						}
 						strcpy(door->start_command6, ptr);
-						dprint("config: %s: start_command6: %s\n", door->name, door->start_command6);
+						dprint("config: %s: start_command_6: %s\n", door->name, door->start_command6);
 					} else if(!strcmp(key, "CMD_TIMEOUT")) {
 						door->cmd_timeout = (time_t)atoi(ptr);
 						dprint("config: %s: cmd_timeout: %d\n", door->name, door->cmd_timeout);
@@ -717,14 +718,14 @@ int parseconfig(char *configfile)
 						}
 						strcpy(door->stop_command, ptr);
 						dprint("config: %s: stop_command: %s\n", door->name, door->stop_command);
-					} else if(!strcmp(key, "STOP_COMMAND6")) {
+					} else if(!strcmp(key, "STOP_COMMAND_6")) {
 						door->stop_command6 = malloc(sizeof(char) * (strlen(ptr)+1));
 						if(door->stop_command6 == NULL) {
 							perror("malloc");
 							exit(1);
 						}
 						strcpy(door->stop_command6, ptr);
-						dprint("config: %s: stop_command6: %s\n", door->name, door->stop_command6);
+						dprint("config: %s: stop_command_6: %s\n", door->name, door->stop_command6);
 					} else if(!strcmp(key, "TCPFLAGS")) {
 						char *flag;
 						strtoupper(ptr);

@@ -135,10 +135,10 @@ of the two protocols.
 	seq_timeout        = 15
 	tcpflags           = fin,!ack
 	start_command      = /usr/sbin/iptables \-A INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
-	start_command6     = /usr/sbin/ip6tables \-A INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	start_command_6    = /usr/sbin/ip6tables \-A INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
 	cmd_timeout        = 5
 	stop_command       = /usr/sbin/iptables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
-	stop_command6      = /usr/sbin/ip6tables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	stop_command_6     = /usr/sbin/ip6tables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
 	
 .fi
 .RE
@@ -205,9 +205,15 @@ etherwake to send the host a WOL packet.
 .TP
 .B "Start_Command = <command>"
 Specify the command to be executed when a client makes the correct
-port-knock.  All instances of \fB%IP%\fP will be replaced with the
+port-knock with IPv4.  All instances of \fB%IP%\fP will be replaced with the
 knocker's IP address.  The \fBCommand\fP directive is an alias for
 \fBStart_Command\fP.
+.TP
+.B "Start_Command_6 = <command>"
+Specify the command to be executed when a client makes the correct
+port-knock with IPv6.  All instances of \fB%IP%\fP will be replaced with the
+knocker's IP address.  The \fBCommand_6\fP directive is an alias for
+\fBStart_Command_6\fP.
 .TP
 .B "Cmd_Timeout = <timeout>"
 Time to wait (in seconds) between \fBStart_Command\fP and \fBStop_Command\fP.
@@ -216,6 +222,11 @@ This directive is optional, only required if \fBStop_Command\fP is used.
 .B "Stop_Command = <command>"
 Specify the command to be executed when \fBCmd_Timeout\fP seconds have passed 
 since \fBStart_Command\fP has been executed.  All instances of \fB%IP%\fP will
+be replaced with the knocker's IP address.  This directive is optional.
+.TP
+.B "Stop_Command_6 = <command>"
+Specify the command to be executed when \fBCmd_Timeout\fP seconds have passed 
+since \fBStart_Command_6\fP has been executed.  All instances of \fB%IP%\fP will
 be replaced with the knocker's IP address.  This directive is optional.
 .SH SECURITY NOTES 
 Using the \fB-l\fP or \fB--lookup\fP commandline option to resolve DNS names

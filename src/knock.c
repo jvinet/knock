@@ -54,21 +54,6 @@ int o_udp     = 0;
 int o_delay   = 0;
 int o_ip      = IP_DEFAULT;
 
-int txt_to_ip_version(const char * value)
-{
-	int n = atoi(value);
-	
-	if (n == 4)
-	{
-		return IP_V4;
-	} else if (n == 6) {
-		return IP_V6;
-	} else {
-		fprintf(stderr,"Invalid IP protocol version %d, should be 4 or 6 !",n);
-		exit(1);
-	}
-}
-
 int main(int argc, char** argv)
 {
 	int sd;
@@ -85,11 +70,12 @@ int main(int argc, char** argv)
 		{"delay",     required_argument, 0, 'd'},
 		{"help",      no_argument,       0, 'h'},
 		{"version",   no_argument,       0, 'V'},
-		{"ip",        required_argument, 0, 'i'},
+		{"ipv4",      no_argument,       0, '4'},
+		{"ipv6",      no_argument,       0, '6'},
 		{0, 0, 0, 0}
 	};
 
-	while((opt = getopt_long(argc, argv, "vud:hVi:", opts, &optidx))) {
+	while((opt = getopt_long(argc, argv, "vud:hV46", opts, &optidx))) {
 		if(opt < 0) {
 			break;
 		}
@@ -99,7 +85,8 @@ int main(int argc, char** argv)
 			case 'u': o_udp = 1; break;
 			case 'd': o_delay = (int)atoi(optarg); break;
 			case 'V': ver();
-			case 'i': o_ip = txt_to_ip_version(optarg); break;
+			case '4': o_ip = IP_V4; break;
+			case '6': o_ip = IP_V6; break;
 			case 'h': /* fallthrough */
 			default: usage();
 		}
@@ -204,7 +191,8 @@ void usage() {
 	printf("options:\n");
 	printf("  -u, --udp            make all ports hits use UDP (default is TCP)\n");
 	printf("  -d, --delay <t>      wait <t> milliseconds between port hits\n");
-	printf("  -i, --ip <version>   IP version to be used (4 or 6)\n");
+	printf("  -4, --ipv4           Force usage of IPv4\n");
+	printf("  -6, --ipv6           Force usage of IPv6\n");
 	printf("  -v, --verbose        be verbose\n");
 	printf("  -V, --version        display version\n");
 	printf("  -h, --help           this help\n");

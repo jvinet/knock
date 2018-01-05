@@ -1559,7 +1559,8 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	char proto[8];
 	/* TCP/IP data */
 	struct in_addr inaddr;
-	unsigned short sport, dport;
+	unsigned short sport = 0;
+	unsigned short dport = 0;
 	char srcIP[64], dstIP[64];
 	/* timestamp */
 	time_t pkt_secs = hdr->ts.tv_sec;
@@ -1569,8 +1570,8 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	PMList *lp;
 	knocker_t *attempt = NULL;
 	PMList *found_attempts = NULL;
-	int ipProto;
-	int fromIpV6;
+	int ipProto = 0;
+	int fromIpV6 = 0;
 
 	if(lltype == DLT_EN10MB) {
 		eth = (struct ether_header*)packet;

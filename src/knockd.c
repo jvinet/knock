@@ -1012,7 +1012,7 @@ void generate_pcap_filter()
 			if(tcp_present) {
 				if(door->flag_fin != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x17 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x01 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-fin ", bufsize);
 					if(door->flag_fin == SET) {
@@ -1024,7 +1024,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_syn != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x17 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x02 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-syn ", bufsize);
 					if(door->flag_syn == SET) {
@@ -1036,7 +1036,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_rst != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x17 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x04 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-rst ", bufsize);
 					if(door->flag_rst == SET) {
@@ -1048,7 +1048,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_psh != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x17 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x08 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
 					if(door->flag_psh == SET) {
@@ -1060,7 +1060,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_ack != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x17 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x10 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-ack ", bufsize);
 					if(door->flag_ack == SET) {
@@ -1072,7 +1072,7 @@ void generate_pcap_filter()
 				}
 				if(door->flag_urg != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x17 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & 0x20 ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-urg ", bufsize);
 					if(door->flag_urg == SET) {

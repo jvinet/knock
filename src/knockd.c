@@ -152,7 +152,7 @@ int  o_verbose   = 0;
 int  o_debug     = 0;
 int  o_daemon    = 0;
 int  o_lookup    = 0;
-char o_int[32]           = "";		/* default (eth0) is set after parseconfig() */
+char o_int[PATH_MAX]           = "";		/* default (eth0) is set after parseconfig() */
 char o_cfg[PATH_MAX]     = "/etc/knockd.conf";
 char o_pidfile[PATH_MAX] = "/var/run/knockd.pid";
 char o_logfile[PATH_MAX] = "";
@@ -229,13 +229,24 @@ int main(int argc, char **argv)
 
 	/* 50ms timeout for packet capture. See pcap(3pcap) manpage, which
 	 * recommends that a timeout of 0 not be used. */
-	cap = pcap_open_live(o_int, 65535, 0, 50, pcapErr);
-	if(strlen(pcapErr)) {
-		fprintf(stderr, "could not open %s: %s\n", o_int, pcapErr);
-	}
-	if(cap == NULL) {
-		exit(1);
-	}
+  int i = 0, n = 0;
+  while( i < sizeof(o_int) ) {
+     int j = 0;
+     for(; j < sizeof(o_int) && o_int[j]!=',' ; j++ ) {}
+     o_int[j]='\0';
+
+     // WARN trim has side-effect of putting in \0s, we dodged by finding j before that.
+     cap = pcap_open_live(trim(o_int + i), 65535, 0, 50, pcapErr);
+     if(!strlen(pcapErr)) { break; }
+     n++;
+     i = j + 1;  // Go to next word.
+  }
+  if(!strlen(pcapErr)) {
+     fprintf(stderr, "could not open%s %s: %s\n", (n==1 ? "" : " any of"), o_int, pcapErr);
+  }
+  if(cap == NULL) {
+    exit(1);
+  }
 
 	lltype = pcap_datalink(cap);
 	switch(lltype) {
@@ -889,7 +900,7 @@ void generate_pcap_filter()
 	short head_set = 0;	   /* flag indicating if protocol head is set (i.e. "((tcp dst port") */
 	short tcp_present = 0; /* flag indicating if TCP is used */
 	short udp_present = 0; /* flag indicating if UDP is used */
-	unsigned int i;
+	unsigned int i,n;
 	short modified_filters = 0;  /* flag indicating if at least one filter has changed --> recompile the filter */
 	struct bpf_program bpf_prog; /* compiled BPF filter program */
 

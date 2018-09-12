@@ -34,6 +34,7 @@
 #include <resolv.h>
 #include <getopt.h>
 #include <fcntl.h>
+#include "interface.h"
 
 static char version[] = "0.7";
 
@@ -54,6 +55,8 @@ int main(int argc, char** argv)
 	int sd;
 	struct hostent* host;
 	struct sockaddr_in addr;
+	struct sockaddr_in bind_addr;
+	bool do_bind=false;
 	int opt, optidx = 1;
 	static struct option opts[] =
 	{
@@ -62,10 +65,11 @@ int main(int argc, char** argv)
 		{"delay",     required_argument, 0, 'd'},
 		{"help",      no_argument,       0, 'h'},
 		{"version",   no_argument,       0, 'V'},
+		{"interface", required_argument, 0, 'i'},
 		{0, 0, 0, 0}
 	};
 
-	while((opt = getopt_long(argc, argv, "vud:hV", opts, &optidx))) {
+	while((opt = getopt_long(argc, argv, "vud:hVi:", opts, &optidx))) {
 		if(opt < 0) {
 			break;
 		}
@@ -74,6 +78,17 @@ int main(int argc, char** argv)
 			case 'v': o_verbose = 1; break;
 			case 'u': o_udp = 1; break;
 			case 'd': o_delay = (int)atoi(optarg); break;
+			case 'i':
+				memset(&bind_addr,0,sizeof(struct sockaddr_in));
+				if ( get_interface_addr4(optarg,&bind_addr.sin_addr) ) {
+					do_bind=true;
+					bind_addr.sin_family=AF_INET;
+					bind_addr.sin_port=0;
+				} else {
+					fprintf(stderr,"error: interface %s not found.\n",optarg);
+					exit(1);
+				}
+				break;
 			case 'V': ver();
 			case 'h': /* fallthrough */
 			default: usage();
@@ -126,10 +141,19 @@ int main(int argc, char** argv)
 			flags = fcntl(sd, F_GETFL, 0);
 			fcntl(sd, F_SETFL, flags | O_NONBLOCK);
 		}
+		if (do_bind) {
+			int tmp = bind(sd,(struct sockaddr *)&bind_addr,sizeof(bind_addr));
+			if (tmp !=0 ) {
+				fprintf(stderr,"error can not bind to specified interface.\n");
+				exit(1);
+			}
+		}
 		memset(&addr, 0, sizeof(addr));
 		addr.sin_family = AF_INET;
 		addr.sin_addr.s_addr = *((long*)host->h_addr_list[0]);
 		addr.sin_port = htons(port);
+		if (do_bind)
+			vprint("using %s:%u addr: ",inet_ntoa(bind_addr.sin_addr),bind_addr.sin_port);
 		if(o_udp || proto == PROTO_UDP) {
 			vprint("hitting udp %s:%u\n", inet_ntoa(addr.sin_addr), port);
 			sendto(sd, "", 1, 0, (struct sockaddr*)&addr, sizeof(addr));
@@ -160,6 +184,7 @@ void usage() {
 	printf("options:\n");
 	printf("  -u, --udp            make all ports hits use UDP (default is TCP)\n");
 	printf("  -d, --delay <t>      wait <t> milliseconds between port hits\n");
+	printf("  -i, --interface <n>  use interface <name> for port hits\n");
 	printf("  -v, --verbose        be verbose\n");
 	printf("  -V, --version        display version\n");
 	printf("  -h, --help           this help\n");

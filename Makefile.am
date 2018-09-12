@@ -13,7 +13,12 @@ endif
 
 dist_doc_DATA = README.md TODO ChangeLog COPYING
 
-knock_SOURCES = src/knock.c
+knock_SOURCES = src/knock.c src/interface.h
+if USE_GETIFADDRS
+knock_SOURCES += src/interface_getifaddrs.c
+else
+knock_SOURCES += src/interface_ioctl.c
+endif
 knockd_SOURCES = src/knockd.c src/list.c src/list.h src/knock_helper_ipt.sh
 
 %.1: %.1.in

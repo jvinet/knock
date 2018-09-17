@@ -21,7 +21,7 @@ where a router mistakes your stream of SYN packets as a port scan and blocks
 them.  If the packet rate is slowed with \-\-delay, then the router should let
 the packets through.
 .TP
-.B "\-i <n>, \-\-delay <n>"
+.B "\-i <n>, \-\-interface <n>"
 Use network interface <n> for knocks, like eth0. This option can be useful
 when a system has more than one network interface with different gateways
 (multihomed).

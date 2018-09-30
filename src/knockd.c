@@ -1464,6 +1464,14 @@ void process_attempt(knocker_t *attempt)
 	{
 		start_command = attempt->door->start_command6;
 		stop_command = attempt->door->stop_command6;
+		
+		//make default fallback to same than ipv4 if v6 command is not set.
+		if (start_command == NULL) {
+			start_command = attempt->door->start_command;
+		}
+		if (stop_command == NULL) {
+			stop_command = attempt->door->stop_command;
+		}
 	} else {
 		start_command = attempt->door->start_command;
 		stop_command = attempt->door->stop_command;

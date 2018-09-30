@@ -213,7 +213,9 @@ knocker's IP address.  The \fBCommand\fP directive is an alias for
 Specify the command to be executed when a client makes the correct
 port-knock with IPv6.  All instances of \fB%IP%\fP will be replaced with the
 knocker's IP address.  The \fBCommand_6\fP directive is an alias for
-\fBStart_Command_6\fP.
+\fBStart_Command_6\fP. If not present it will automatically fallback onto
+the same IPV4 \fBStart_Command\fP value. You can use empty value to force
+doing nothing.
 .TP
 .B "Cmd_Timeout = <timeout>"
 Time to wait (in seconds) between \fBStart_Command\fP and \fBStop_Command\fP.
@@ -228,6 +230,9 @@ be replaced with the knocker's IP address.  This directive is optional.
 Specify the command to be executed when \fBCmd_Timeout\fP seconds have passed 
 since \fBStart_Command_6\fP has been executed.  All instances of \fB%IP%\fP will
 be replaced with the knocker's IP address.  This directive is optional.
+If not present it will automatically fallback onto the same IPV4 
+\fBStop_Command\fP value. You can use empty value to force
+doing nothing.
 .SH SECURITY NOTES 
 Using the \fB-l\fP or \fB--lookup\fP commandline option to resolve DNS names
 for log entries may be a security risk!  An attacker may find out the first port

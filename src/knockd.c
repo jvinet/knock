@@ -144,6 +144,7 @@ int target_strcmp(char *ip, char *target);
 pcap_t *cap = NULL;
 FILE *logfd = NULL;
 int lltype = -1;
+int hasIpV4 = 0;
 int hasIpV6 = 0;
 /* list of IP addresses for given interface
  */
@@ -276,6 +277,8 @@ int main(int argc, char **argv)
 				continue;
 
 			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skipIpV6))) {
+				if (ifa->ifa_addr->sa_family == AF_INET)
+					hasIpV4 = 1;
 				if (ifa->ifa_addr->sa_family == AF_INET6)
 					hasIpV6 = 1;
 				if((myip = calloc(1, sizeof(ip_literal_t))) == NULL) {
@@ -940,6 +943,11 @@ void generate_pcap_filter()
 	 */
 	for (ipv6 = 0 ; ipv6 <=1 ; ipv6++)
 	{
+		if (ipv6 == 0 && !hasIpV4)
+			continue;
+		if (ipv6 == 1 && !hasIpV6)
+			continue;
+
 		if (ipv6 && o_skipIpV6)
 			continue;
 		
@@ -1162,12 +1170,18 @@ void generate_pcap_filter()
 			door = (opendoor_t*)lp->data;
 			for (ipv6 = 0 ; ipv6 <= 1 ; ipv6++)
 			{
+				if (ipv6 == 0 && !hasIpV4)
+					continue;
+				if (ipv6 == 1 && !hasIpV6)
+					continue;
+
+				if (ipv6 && o_skipIpV6)
+					continue;
+
 				if (first)
 					first = 0;
 				else
 					bufsize = realloc_strcat(&buffer, " or ", bufsize);
-				if (ipv6 && o_skipIpV6)
-					continue;
 				if (ipv6)
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_expv6, bufsize);
 				else

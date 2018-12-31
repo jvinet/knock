@@ -31,6 +31,9 @@ Output debugging messages.
 Lookup DNS names for log entries. This may be a security risk! See section
 \fBSECURITY NOTES\fP.
 .TP
+.B "\-4, \-\-only-ip-v4"
+Ignore packets from IPv6 and handle only IPv4.
+.TP
 .B "\-v, \-\-verbose"
 Output verbose status messages.
 .TP
@@ -117,6 +120,27 @@ sniffing the network).
 	stop_command       = /usr/sbin/iptables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
 	
 .fi
+.TP
+.SH Example #4:
+.RS
+Example to support IPv4 and IPv6. You can provide a dedicated command for each
+of the two protocols.
+
+.nf
+[options]
+	logfile = /var/log/knockd.log
+
+[opencloseSMTP]
+	one_time_sequences = /etc/knockd/smtp_sequences
+	seq_timeout        = 15
+	tcpflags           = fin,!ack
+	start_command      = /usr/sbin/iptables \-A INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	start_command_6    = /usr/sbin/ip6tables \-A INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	cmd_timeout        = 5
+	stop_command       = /usr/sbin/iptables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	stop_command_6     = /usr/sbin/ip6tables \-D INPUT \-s %IP% \-p tcp \-\-dport 25 \-j ACCEPT
+	
+.fi
 .RE
 .SH CONFIGURATION: GLOBAL DIRECTIVES
 .TP
@@ -181,9 +205,17 @@ etherwake to send the host a WOL packet.
 .TP
 .B "Start_Command = <command>"
 Specify the command to be executed when a client makes the correct
-port-knock.  All instances of \fB%IP%\fP will be replaced with the
+port-knock with IPv4.  All instances of \fB%IP%\fP will be replaced with the
 knocker's IP address.  The \fBCommand\fP directive is an alias for
 \fBStart_Command\fP.
+.TP
+.B "Start_Command_6 = <command>"
+Specify the command to be executed when a client makes the correct
+port-knock with IPv6.  All instances of \fB%IP%\fP will be replaced with the
+knocker's IP address.  The \fBCommand_6\fP directive is an alias for
+\fBStart_Command_6\fP. If not present it will automatically fallback onto
+the same IPV4 \fBStart_Command\fP value. You can use empty value to force
+doing nothing.
 .TP
 .B "Cmd_Timeout = <timeout>"
 Time to wait (in seconds) between \fBStart_Command\fP and \fBStop_Command\fP.
@@ -193,6 +225,14 @@ This directive is optional, only required if \fBStop_Command\fP is used.
 Specify the command to be executed when \fBCmd_Timeout\fP seconds have passed 
 since \fBStart_Command\fP has been executed.  All instances of \fB%IP%\fP will
 be replaced with the knocker's IP address.  This directive is optional.
+.TP
+.B "Stop_Command_6 = <command>"
+Specify the command to be executed when \fBCmd_Timeout\fP seconds have passed 
+since \fBStart_Command_6\fP has been executed.  All instances of \fB%IP%\fP will
+be replaced with the knocker's IP address.  This directive is optional.
+If not present it will automatically fallback onto the same IPV4 
+\fBStop_Command\fP value. You can use empty value to force
+doing nothing.
 .SH SECURITY NOTES 
 Using the \fB-l\fP or \fB--lookup\fP commandline option to resolve DNS names
 for log entries may be a security risk!  An attacker may find out the first port

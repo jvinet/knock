@@ -3,6 +3,7 @@
  *
  *  Copyright (c) 2004-2018 by Judd Vinet <jvinet@zeroflux.org>
  *                             Sebastien Valat <sebastien.valat@gmail.com>
+ *                             Marius Hoch <hoo@online.de>
  *                             TDFKAOlli <tdfkaolli@ish.de>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -1795,11 +1796,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					struct hostent *he;
 					/* create a new entry */
 					attempt = (knocker_t*)malloc(sizeof(knocker_t));
-					attempt->srchost = NULL;
 					if(attempt == NULL) {
 						perror("malloc");
 						exit(1);
 					}
+					attempt->srchost = NULL;
 					attempt->fromIpV6 = fromIpV6;
 					strcpy(attempt->src, srcIP);
 					/* try a reverse lookup if enabled  */

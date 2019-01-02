@@ -1,7 +1,7 @@
 /*
  *  knockd.c
  *
- *  Copyright (c) 2004-2018 by Judd Vinet <jvinet@zeroflux.org>
+ *  Copyright (c) 2004-2019 by Judd Vinet <jvinet@zeroflux.org>
  *                             Sebastien Valat <sebastien.valat@gmail.com>
  *                             Marius Hoch <hoo@online.de>
  *                             TDFKAOlli <tdfkaolli@ish.de>
@@ -66,7 +66,7 @@
 extern int daemon(int, int);
 #endif
 
-static char version[] = "0.7.8";
+static char version[] = "0.8";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */
@@ -190,7 +190,7 @@ int main(int argc, char **argv)
 		{"version",   no_argument,       0, 'V'},
 		{0, 0, 0, 0}
 	};
-	
+
 	while((opt = getopt_long(argc, argv, "4vDdli:c:p:g:hV", opts, &optidx))) {
 		if(opt < 0) {
 			break;
@@ -518,7 +518,11 @@ void usage(int exit_code) {
 
 void ver() {
 	printf("knockd %s\n", version);
-	printf("Copyright (C) 2004-2012 Judd Vinet <jvinet@zeroflux.org>\n");
+	printf("Copyright (C) 2004-2019 Judd Vinet <jvinet@zeroflux.org>,"
+		" Sebastien Valat <sebastien.valat@gmail.com>,"
+		" Marius Hoch <hoo@online.de>,"
+		" TDFKAOlli <tdfkaolli@ish.de>"
+		"\n");
 	exit(0);
 }
 
@@ -931,7 +935,7 @@ void generate_pcap_filter()
 	PMList *lp;
 	opendoor_t *door;
 	ip_literal_t *myip;
-	char *buffer = NULL;   /* temporary buffer to create the individual filter strings */ 
+	char *buffer = NULL;   /* temporary buffer to create the individual filter strings */
 	size_t bufsize = 0;    /* size of buffer */
 	char port_str[10];     /* used by snprintf to convert unsigned short --> string */
 	short head_set = 0;	   /* flag indicating if protocol head is set (i.e. "((tcp dst port") */
@@ -1057,9 +1061,9 @@ void generate_pcap_filter()
 				}
 				if(door->flag_psh != DONT_CARE) {
 					if (ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-push ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-psh ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
-						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
+						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-psh ", bufsize);
 					if(door->flag_psh == SET) {
 						bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
 					}
@@ -1157,7 +1161,7 @@ void generate_pcap_filter()
 	 * Note that we don't check if a port is included in multiple doors, we simply concatenate the individual door
 	 * filters and rely on pcap's optimization capabilities.
 	 *
-	 * Example filter for two doors with sequences 8000:tcp,4000:udp,8001:tcp,4001:udp,8002:tcp (syn) and 
+	 * Example filter for two doors with sequences 8000:tcp,4000:udp,8001:tcp,4001:udp,8002:tcp (syn) and
 	 * 1234:tcp,4567:tcp,8901:tcp (syn,ack) :
 	 * dst host the.hosts.ip.address and (
 	 *      ((tcp dst port 8000 or 8001 or 8002) and tcp[tcpflags] & tcp-syn != 0) or (udp dst port 4000 or 4001)

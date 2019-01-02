@@ -1,7 +1,7 @@
 /*
  *  knock.c
  *
- *  Copyright (c) 2004-2018 by Judd Vinet <jvinet@zeroflux.org>
+ *  Copyright (c) 2004-2019 by Judd Vinet <jvinet@zeroflux.org>
  *                             Sebastien Valat <sebastien.valat@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -36,7 +36,7 @@
 #include <getopt.h>
 #include <fcntl.h>
 
-static char version[] = "0.7";
+static char version[] = "0.8";
 
 #define PROTO_TCP 1
 #define PROTO_UDP 2
@@ -205,7 +205,8 @@ void usage() {
 
 void ver() {
 	printf("knock %s\n", version);
-	printf("Copyright (C) 2004-2012 Judd Vinet <jvinet@zeroflux.org>\n");
+	printf("Copyright (C) 2004-2019 Judd Vinet <jvinet@zeroflux.org>,"
+		" Sebastien Valat <sebastien.valat@gmail.com>\n");
 	exit(0);
 }
 

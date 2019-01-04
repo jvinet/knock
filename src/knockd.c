@@ -792,6 +792,10 @@ int parseconfig(char *configfile)
 			fprintf(stderr, "error: section '%s' has an empty knock sequence\n", door->name);
 			return(1);
 		}
+		if(door->start_command == NULL && door->start_command6 == NULL) {
+			fprintf(stderr, "error: section '%s' has no start command\n", door->name);
+			return(1);
+		}
 	}
 
 	return(0);
@@ -1257,12 +1261,25 @@ void close_door(opendoor_t *door)
 	doors = list_remove(doors, door);
 	if(door) {
 		free(door->target);
-		free(door->start_command);
-		free(door->stop_command);
+		if(door->start_command) {
+			free(door->start_command);
+		}
+		if(door->start_command6) {
+			free(door->start_command6);
+		}
+		if(door->stop_command) {
+			free(door->stop_command);
+		}
+		if(door->stop_command6) {
+			free(door->stop_command6);
+		}
 		if (door->one_time_sequences_fd) {
 			fclose(door->one_time_sequences_fd);
 		}
 		free(door->pcap_filter_exp);
+		if(door->pcap_filter_expv6) {
+			free(door->pcap_filter_expv6);
+		}
 		free(door);
 	}
 }
@@ -1560,6 +1577,10 @@ void process_attempt(knocker_t *attempt)
 			get_new_one_time_sequence(attempt->door);
 
 			/* update pcap filter */
+			if(attempt->door->pcap_filter_expv6) {
+				free(attempt->door->pcap_filter_expv6);
+				attempt->door->pcap_filter_expv6 = NULL;
+			}
 			free(attempt->door->pcap_filter_exp);
 			attempt->door->pcap_filter_exp = NULL;
 			generate_pcap_filter();

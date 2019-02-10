@@ -128,7 +128,6 @@ void ver();
 void usage(int exit_code);
 char* strtoupper(char *str);
 char* trim(char *str);
-void runCommand(char *cmd);
 int parseconfig(char *configfile);
 int parse_port_sequence(char *sequence, opendoor_t *door);
 int get_new_one_time_sequence(opendoor_t *door);

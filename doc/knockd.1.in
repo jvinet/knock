@@ -34,6 +34,9 @@ Lookup DNS names for log entries. This may be a security risk! See section
 .B "\-4, \-\-only-ip-v4"
 Ignore packets from IPv6 and handle only IPv4.
 .TP
+.B "\-s, \-\-save-mem"
+Try save runtime memory usage on low mem systems.
+.TP
 .B "\-v, \-\-verbose"
 Output verbose status messages.
 .TP

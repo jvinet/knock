@@ -1628,11 +1628,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					struct hostent *he;
 					/* create a new entry */
 					attempt = (knocker_t*)malloc(sizeof(knocker_t));
-					attempt->srchost = NULL;
 					if(attempt == NULL) {
 						perror("malloc");
 						exit(1);
 					}
+					attempt->srchost = NULL;
 					strcpy(attempt->src, srcIP);
 					/* try a reverse lookup if enabled  */
 					if (o_lookup) {

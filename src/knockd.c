@@ -583,6 +583,12 @@ int parseconfig(char *configfile)
 				door->start_command = NULL;
 				door->cmd_timeout = CMD_TIMEOUT; /* default command timeout (seconds) */
 				door->stop_command = NULL;
+				door->flag_fin = DONT_CARE;
+				door->flag_syn = DONT_CARE;
+				door->flag_rst = DONT_CARE;
+				door->flag_psh = DONT_CARE;
+				door->flag_ack = DONT_CARE;
+				door->flag_urg = DONT_CARE;
 				door->one_time_sequences_fd = NULL;
 				door->pcap_filter_exp = NULL;
 				doors = list_add(doors, door);

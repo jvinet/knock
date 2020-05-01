@@ -608,6 +608,12 @@ int parseconfig(char *configfile)
 				door->cmd_timeout = CMD_TIMEOUT; /* default command timeout (seconds) */
 				door->stop_command = NULL;
 				door->stop_command6 = NULL;
+				door->flag_fin = DONT_CARE;
+				door->flag_syn = DONT_CARE;
+				door->flag_rst = DONT_CARE;
+				door->flag_psh = DONT_CARE;
+				door->flag_ack = DONT_CARE;
+				door->flag_urg = DONT_CARE;
 				door->one_time_sequences_fd = NULL;
 				door->pcap_filter_exp = NULL;
 				door->pcap_filter_expv6 = NULL;
@@ -1799,12 +1805,12 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					struct hostent *he;
 					/* create a new entry */
 					attempt = (knocker_t*)malloc(sizeof(knocker_t));
-					attempt->srchost = NULL;
 					if(attempt == NULL) {
 						perror("malloc");
 						exit(1);
 					}
 					attempt->fromIpV6 = fromIpV6;
+					attempt->srchost = NULL;
 					strcpy(attempt->src, srcIP);
 					/* try a reverse lookup if enabled  */
 					if (o_lookup) {

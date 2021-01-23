@@ -1446,6 +1446,21 @@ void process_attempt(knocker_t *attempt)
 	}
 }
 
+/**
+ * Depending on configuration, duplicates of ports already knocked in a sequence
+ * may be duplicated (e.g. if a browser always sends 2 SYN-packets)
+ */
+int already_matched(knocker_t * attempt, unsigned short dport, uint8_t proto) {
+	for (int i = 0; i < attempt->stage; ++i) {
+		if (dport == attempt->door->sequence[i]
+			&& proto == attempt->door->protocol[i]) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+
 /* Sniff an interface, looking for port-knock sequences
  */
 void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
@@ -1611,7 +1626,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
 					dport == attempt->door->sequence[attempt->stage]) {
 				process_attempt(attempt);
-			} else if(flagsmatch == 0) {
+			} else if(flagsmatch == 0 || already_matched(attempt, dport, ip->ip_p)) {
 				/* TCP flags didn't match -- just ignore this packet, don't
 				 * invalidate the knock.
 				 */

@@ -152,6 +152,7 @@ int  o_verbose   = 0;
 int  o_debug     = 0;
 int  o_daemon    = 0;
 int  o_lookup    = 0;
+int  o_duplicate = 0;
 char o_int[32]           = "";		/* default (eth0) is set after parseconfig() */
 char o_cfg[PATH_MAX]     = "/etc/knockd.conf";
 char o_pidfile[PATH_MAX] = "/var/run/knockd.pid";
@@ -611,6 +612,9 @@ int parseconfig(char *configfile)
 				if(!strcmp(key, "USESYSLOG")) {
 					o_usesyslog = 1;
 					dprint("config: usesyslog\n");
+				} else if(!strcmp(key, "ALLOWDUPLICATES")) {
+					o_duplicate = 1;
+					dprint("config: allowduplicates set\n");
 				} else {
 					fprintf(stderr, "config: line %d: syntax error\n", linenum);
 					return(1);
@@ -1451,10 +1455,12 @@ void process_attempt(knocker_t *attempt)
  * may be duplicated (e.g. if a browser always sends 2 SYN-packets)
  */
 int already_matched(knocker_t * attempt, unsigned short dport, uint8_t proto) {
-	for (int i = 0; i < attempt->stage; ++i) {
-		if (dport == attempt->door->sequence[i]
-			&& proto == attempt->door->protocol[i]) {
-			return 1;
+	if (o_duplicate) {
+		for (int i = 0; i < attempt->stage; ++i) {
+			if (dport == attempt->door->sequence[i]
+				&& proto == attempt->door->protocol[i]) {
+				return 1;
+			}
 		}
 	}
 	return 0;

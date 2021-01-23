@@ -133,6 +133,10 @@ Pidfile to use when in daemon mode, default: /var/run/knockd.pid.
 .B "Interface = <interface_name>"
 Network interface to listen on. Only its name has to be given, not the path to
 the device (eg, "eth0" and not "/dev/eth0"). Default: eth0.
+.TP
+.B "AllowDuplictes"
+If specified, duplicate knocks of already correctly knocked ports will not lead
+to the abortion of the knock sequence. Useful e.g. for browser-based knocking.
 .SH CONFIGURATION: KNOCK/EVENT DIRECTIVES
 .TP
 .B "Sequence = <port1>[:<tcp|udp>],<port2>[:<tcp|udp>][,<port3>[:<tcp|udp>] ...]"

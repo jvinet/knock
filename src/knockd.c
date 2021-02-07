@@ -455,6 +455,7 @@ void reload(int signum)
 	/* close the log file */
 	if(logfd) {
 		fclose(logfd);
+		logfd = NULL;
 	}
 
 	if(res_cfg) {

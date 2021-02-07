@@ -1,5 +1,5 @@
 AC_PREREQ(2.60)
-AC_INIT([knock], [0.8.1], [https://github.com/jvinet/knock/issues])
+AC_INIT([knock], [0.8.2], [https://github.com/jvinet/knock/issues])
 AM_INIT_AUTOMAKE([dist-xz no-dist-gzip foreign subdir-objects])
 
 AC_CONFIG_HEADER([config.h])

@@ -446,6 +446,7 @@ void reload(int signum)
 		close_door(door);
 	}
 	list_free(doors);
+	doors = NULL;
 
 	res_cfg = parseconfig(o_cfg);
 

@@ -529,7 +529,12 @@ char* trim(char *str)
 		memmove(str, pch, (strlen(pch) + 1));
 	}
 
-	pch = (char*)(str + (strlen(str) - 1));
+	size_t len = strlen(str);
+	if (len == 0) {
+		return str;
+	}
+
+	pch = (char*)(str + (len - 1));
 	while(isspace(*pch)) {
 		pch--;
 	}

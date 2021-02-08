@@ -1472,7 +1472,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	char pkt_time[9];
 	PMList *lp;
 	knocker_t *attempt = NULL;
-	PMList *found_attempts = NULL;
+	PMList *found_attempts = NULL, *found_attempt;
 
 	if(lltype == DLT_EN10MB) {
 		eth = (struct ether_header*)packet;
@@ -1608,8 +1608,9 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		found_attempts = list_add(found_attempts, NULL);
 	}
 
-	while (found_attempts != NULL) {
-		attempt = (knocker_t*)found_attempts->data;
+	for (found_attempt = found_attempts; found_attempt != NULL; found_attempt = found_attempt->next) {
+		attempt = (knocker_t*)found_attempt->data;
+		found_attempt->data = NULL;
 
 		if(attempt) {
 			int flagsmatch = flags_match(attempt->door, ip, tcp);
@@ -1662,9 +1663,9 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				}
 			}
 		}
-
-		found_attempts = found_attempts->next;
 	}
+
+	list_free(found_attempts);
 }
 
 /* Compare ip against door target or all ips of our local interface

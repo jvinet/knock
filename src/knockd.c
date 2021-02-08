@@ -448,6 +448,9 @@ void reload(int signum)
 	list_free(doors);
 	doors = NULL;
 
+	list_free(attempts);
+	attempts = NULL;
+
 	res_cfg = parseconfig(o_cfg);
 
 	vprint("Closing log file: %s\n", o_logfile);

@@ -109,6 +109,7 @@ int main(int argc, char** argv)
 		} else {
 			port = atoi(arg);
 		}
+		free(arg);
 
 		if(o_udp || proto == PROTO_UDP) {
 			sd = socket(PF_INET, SOCK_DGRAM, 0);

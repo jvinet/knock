@@ -413,7 +413,7 @@ void cleanup(int signum)
 		unlink(o_pidfile);
 	}
 
-	if(myips) {
+	if(myip) {
 		while(myips) {
 			if(myip->value)
 				free(myip->value);

@@ -129,6 +129,7 @@ int disable_used_one_time_sequence(opendoor_t *door);
 long get_current_one_time_sequence_position(opendoor_t *door);
 void generate_pcap_filter();
 size_t realloc_strcat(char **dest, const char *src, size_t size);
+void free_door(opendoor_t *door);
 void close_door(opendoor_t *door);
 char* get_ip(const char *iface, char *buf, int bufsize);
 size_t parse_cmd(char *dest, size_t size, const char *command, const char *src);
@@ -443,7 +444,8 @@ void reload(int signum)
 
 	for(lp = doors; lp; lp = lp->next) {
 		door = (opendoor_t*)lp->data;
-		close_door(door);
+		free_door(door);
+		lp->data = NULL;
 	}
 	list_free(doors);
 	doors = NULL;
@@ -1161,11 +1163,8 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 	return new_size;
 }
 
-/* Disable the door by removing it from the doors list and free all allocated memory.
- */
-void close_door(opendoor_t *door)
+void free_door(opendoor_t *door)
 {
-	doors = list_remove(doors, door);
 	if(door) {
 		free(door->target);
 		free(door->start_command);
@@ -1176,6 +1175,14 @@ void close_door(opendoor_t *door)
 		free(door->pcap_filter_exp);
 		free(door);
 	}
+}
+
+/* Disable the door by removing it from the doors list and free all allocated memory.
+ */
+void close_door(opendoor_t *door)
+{
+	doors = list_remove(doors, door);
+	free_door(door);
 }
 
 /* Get the IP address of an interface

@@ -413,13 +413,11 @@ void cleanup(int signum)
 		unlink(o_pidfile);
 	}
 
-	if(myip) {
-		while(myips) {
-			if(myip->value)
-				free(myip->value);
-			myips = myip->next;
-			free(myip);
-		}
+	while(myip) {
+		if(myip->value)
+			free(myip->value);
+		myip = myip->next;
+		free(myip);
 	}
 
 	exit(signum);

@@ -399,7 +399,7 @@ void dprint_sequence(opendoor_t *door, char *fmt, ...)
 /* Signal handlers */
 void cleanup(int signum)
 {
-	ip_literal_t *myip = myips;
+	ip_literal_t *myip = myips, *next;
 	int status;
 
 	vprint("waiting for child processes...\n");
@@ -413,10 +413,11 @@ void cleanup(int signum)
 		unlink(o_pidfile);
 	}
 
-	while(myip) {
-		if(myip->value)
+	for (; myip; myip = next) {
+		if (myip->value) {
 			free(myip->value);
-		myip = myip->next;
+		}
+		next = myip->next;
 		free(myip);
 	}
 

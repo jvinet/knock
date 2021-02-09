@@ -1453,7 +1453,10 @@ void process_attempt(knocker_t *attempt)
 		 * Note that here the door will eventually be closed in
 		 * get_new_one_time_sequence() if no more sequences are left */
 		if(attempt->door->one_time_sequences_fd) {
-			disable_used_one_time_sequence(attempt->door);
+			if (disable_used_one_time_sequence(attempt->door)) {
+				return;
+			}
+
 			get_new_one_time_sequence(attempt->door);
 
 			/* update pcap filter */

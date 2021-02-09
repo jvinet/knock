@@ -1139,8 +1139,10 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 {
 	size_t needed_size;
 	size_t new_size;
+	char *orig = *dest;
 
 	if(size == 0) {
+		free(orig);
 		return 0;
 	}
 
@@ -1153,6 +1155,7 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 	if(new_size != size) {
 		*dest = (char*)realloc(*dest, new_size);
 		if(*dest == NULL) {
+			free(orig);
 			return 0;
 		}
 	}

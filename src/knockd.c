@@ -1343,7 +1343,7 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
 				dprint("packet is not ACK, ignoring...\n");
 				return 0;
 			}
-			if(door->flag_ack == NOT_SET && !(tcp->th_flags & TH_ACK)) {
+			if(door->flag_ack == NOT_SET && (tcp->th_flags & TH_ACK)) {
 				dprint("packet is not !ACK, ignoring...\n");
 				return 0;
 			}
@@ -1353,7 +1353,7 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
 				dprint("packet is not URG, ignoring...\n");
 				return 0;
 			}
-			if(door->flag_urg == NOT_SET && !(tcp->th_flags & TH_URG)) {
+			if(door->flag_urg == NOT_SET && (tcp->th_flags & TH_URG)) {
 				dprint("packet is not !URG, ignoring...\n");
 				return 0;
 			}

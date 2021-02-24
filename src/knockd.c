@@ -129,6 +129,7 @@ int disable_used_one_time_sequence(opendoor_t *door);
 long get_current_one_time_sequence_position(opendoor_t *door);
 void generate_pcap_filter();
 size_t realloc_strcat(char **dest, const char *src, size_t size);
+void free_door(opendoor_t *door);
 void close_door(opendoor_t *door);
 char* get_ip(const char *iface, char *buf, int bufsize);
 size_t parse_cmd(char *dest, size_t size, const char *command, const char *src);
@@ -398,7 +399,7 @@ void dprint_sequence(opendoor_t *door, char *fmt, ...)
 /* Signal handlers */
 void cleanup(int signum)
 {
-	ip_literal_t *myip = myips;
+	ip_literal_t *myip = myips, *next;
 	int status;
 
 	vprint("waiting for child processes...\n");
@@ -412,13 +413,12 @@ void cleanup(int signum)
 		unlink(o_pidfile);
 	}
 
-	if(myips) {
-		while(myips) {
-			if(myip->value)
-				free(myip->value);
-			myips = myip->next;
-			free(myip);
+	for (; myip; myip = next) {
+		if (myip->value) {
+			free(myip->value);
 		}
+		next = myip->next;
+		free(myip);
 	}
 
 	exit(signum);
@@ -443,9 +443,14 @@ void reload(int signum)
 
 	for(lp = doors; lp; lp = lp->next) {
 		door = (opendoor_t*)lp->data;
-		close_door(door);
+		free_door(door);
+		lp->data = NULL;
 	}
 	list_free(doors);
+	doors = NULL;
+
+	list_free(attempts);
+	attempts = NULL;
 
 	res_cfg = parseconfig(o_cfg);
 
@@ -455,6 +460,7 @@ void reload(int signum)
 	/* close the log file */
 	if(logfd) {
 		fclose(logfd);
+		logfd = NULL;
 	}
 
 	if(res_cfg) {
@@ -524,7 +530,12 @@ char* trim(char *str)
 		memmove(str, pch, (strlen(pch) + 1));
 	}
 
-	pch = (char*)(str + (strlen(str) - 1));
+	size_t len = strlen(str);
+	if (len == 0) {
+		return str;
+	}
+
+	pch = (char*)(str + (len - 1));
 	while(isspace(*pch)) {
 		pch--;
 	}
@@ -562,7 +573,7 @@ int parseconfig(char *configfile)
 			ptr = line;
 			ptr++;
 			strncpy(section, ptr, sizeof(section));
-			section[strlen(section)-1] = '\0';
+			section[sizeof(section)-1] = '\0';
 			dprint("config: new section: '%s'\n", section);
 			if(!strlen(section)) {
 				fprintf(stderr, "config: line %d: bad section name\n", linenum);
@@ -1127,8 +1138,10 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 {
 	size_t needed_size;
 	size_t new_size;
+	char *orig = *dest;
 
 	if(size == 0) {
+		free(orig);
 		return 0;
 	}
 
@@ -1141,6 +1154,7 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 	if(new_size != size) {
 		*dest = (char*)realloc(*dest, new_size);
 		if(*dest == NULL) {
+			free(orig);
 			return 0;
 		}
 	}
@@ -1151,11 +1165,8 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 	return new_size;
 }
 
-/* Disable the door by removing it from the doors list and free all allocated memory.
- */
-void close_door(opendoor_t *door)
+void free_door(opendoor_t *door)
 {
-	doors = list_remove(doors, door);
 	if(door) {
 		free(door->target);
 		free(door->start_command);
@@ -1166,6 +1177,14 @@ void close_door(opendoor_t *door)
 		free(door->pcap_filter_exp);
 		free(door);
 	}
+}
+
+/* Disable the door by removing it from the doors list and free all allocated memory.
+ */
+void close_door(opendoor_t *door)
+{
+	doors = list_remove(doors, door);
+	free_door(door);
 }
 
 /* Get the IP address of an interface
@@ -1435,7 +1454,10 @@ void process_attempt(knocker_t *attempt)
 		 * Note that here the door will eventually be closed in
 		 * get_new_one_time_sequence() if no more sequences are left */
 		if(attempt->door->one_time_sequences_fd) {
-			disable_used_one_time_sequence(attempt->door);
+			if (disable_used_one_time_sequence(attempt->door)) {
+				return;
+			}
+
 			get_new_one_time_sequence(attempt->door);
 
 			/* update pcap filter */
@@ -1467,7 +1489,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	char pkt_time[9];
 	PMList *lp;
 	knocker_t *attempt = NULL;
-	PMList *found_attempts = NULL;
+	PMList *found_attempts = NULL, *found_attempt;
 
 	if(lltype == DLT_EN10MB) {
 		eth = (struct ether_header*)packet;
@@ -1603,8 +1625,9 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		found_attempts = list_add(found_attempts, NULL);
 	}
 
-	while (found_attempts != NULL) {
-		attempt = (knocker_t*)found_attempts->data;
+	for (found_attempt = found_attempts; found_attempt != NULL; found_attempt = found_attempt->next) {
+		attempt = (knocker_t*)found_attempt->data;
+		found_attempt->data = NULL;
 
 		if(attempt) {
 			int flagsmatch = flags_match(attempt->door, ip, tcp);
@@ -1657,9 +1680,9 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				}
 			}
 		}
-
-		found_attempts = found_attempts->next;
 	}
+
+	list_free(found_attempts);
 }
 
 /* Compare ip against door target or all ips of our local interface

@@ -95,7 +95,7 @@ int main(int argc, char** argv)
 	}
 	for(; optind < argc; optind++) {
 		unsigned short port, proto = PROTO_TCP;
-		char *ptr, *arg = strdup(argv[optind]);
+		char *ptr, *copy = strdup(argv[optind]), *arg = copy;
 
 		if((ptr = strchr(arg, ':'))) {
 			*ptr = '\0';
@@ -109,6 +109,7 @@ int main(int argc, char** argv)
 		} else {
 			port = atoi(arg);
 		}
+		free(copy);
 
 		if(o_udp || proto == PROTO_UDP) {
 			sd = socket(PF_INET, SOCK_DGRAM, 0);

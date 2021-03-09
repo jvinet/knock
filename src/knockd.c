@@ -57,16 +57,28 @@
 #include <errno.h>
 #include "list.h"
 
+#include <pthread.h>
+#include <semaphore.h>
+#include <math.h>
+// #include <dos.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+
+
 #if __APPLE__
 #undef daemon
 extern int daemon(int, int);
 #endif
+
+// #include "hmac/hmac_sha1.c"
+
 
 static char version[] = "0.7.8";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */
 #define SEQ_MAX     32 /* maximum number of ports in a knock sequence */
+#define  MAX_SEED_LEN 32 /* maximum length of hmac_sha1 key */
 
 typedef enum _flag_stat {
 	DONT_CARE,  /* 0 */
@@ -93,7 +105,20 @@ typedef struct opendoor {
 	flag_stat flag_urg;
 	FILE *one_time_sequences_fd;
 	char *pcap_filter_exp;
+/*
+ * We will use time-based otp with sender ip masking to make sure only the one who has otp_key will be granted access
+ */
+
+	char seed[MAX_SEED_LEN]; //key for hmac_sha1 hash
+    unsigned short otp_change_time;
+    unsigned short otp_port_range;
+    long long tm; // time based variable
+    unsigned short ip_protection; // if door has one
+    unsigned short init_seqcount; // used to fill up ports for doors with ip_protection
+    pthread_t otp_ports;
+    pthread_mutex_t otp_mutex;
 } opendoor_t;
+
 PMList *doors = NULL;
 
 /* we keep one list of knock attempts per IP address,
@@ -105,8 +130,24 @@ typedef struct knocker {
 	char src[16];   /* IP address */
 	char *srchost;  /* Hostname */
 	time_t seq_start;
+
+/* For ip-protected knocking */
+    
+    long long tm; // time based variable
+    unsigned short p_seqcount;
+    unsigned short p_sequence[SEQ_MAX*2];
+    unsigned short p_protocol[SEQ_MAX*2];
+    char *pcap_filter_exp;
 } knocker_t;
 PMList *attempts = NULL;
+
+typedef struct p_attempt {
+    struct p_attempt *next;
+    char *filter;
+    struct knocker *p_guy;
+    
+} pa;
+pa *head_pa = NULL;
 
 /* function prototypes */
 void dprint(char *fmt, ...);
@@ -116,7 +157,7 @@ void dprint_sequence(opendoor_t *door, char *fmt, ...);
 void cleanup(int signum);
 void child_exit(int signum);
 void reload(int signum);
-void ver();
+void ver(void);
 void usage(int exit_code);
 char* strtoupper(char *str);
 char* trim(char *str);
@@ -127,7 +168,7 @@ int get_new_one_time_sequence(opendoor_t *door);
 long get_next_one_time_sequence(opendoor_t *door);
 int disable_used_one_time_sequence(opendoor_t *door);
 long get_current_one_time_sequence_position(opendoor_t *door);
-void generate_pcap_filter();
+void generate_pcap_filter(void);
 size_t realloc_strcat(char **dest, const char *src, size_t size);
 void free_door(opendoor_t *door);
 void close_door(opendoor_t *door);
@@ -136,6 +177,14 @@ size_t parse_cmd(char *dest, size_t size, const char *command, const char *src);
 int exec_cmd(char *command, char *name);
 void sniff(u_char *arg, const struct pcap_pkthdr *hdr, const u_char *packet);
 int target_strcmp(char *ip, char *target);
+void ota_function(opendoor_t *door);
+int parse_otp_sequence(char *sequence, opendoor_t *door);
+void *shedule_port_filling(void *door);
+int fill_otp_ports(char *seed, unsigned short *sequence, unsigned start_index, unsigned end_index, long long tm, unsigned short otp_port_range, pthread_mutex_t *mt );
+void *generate_signal_pcap_filter(void *ptr);
+void *syn_sniff(void *arg);
+char *xorstring(char *a, char *b);
+void add_p_attempt(struct knocker *attempt);
 
 pcap_t *cap = NULL;
 FILE *logfd = NULL;
@@ -151,12 +200,61 @@ ip_literal_t *myips = NULL;
 int  o_usesyslog = 0;
 int  o_verbose   = 0;
 int  o_debug     = 0;
+int  o_debug_flg = 0;
 int  o_daemon    = 0;
 int  o_lookup    = 0;
 char o_int[32]           = "";		/* default (eth0) is set after parseconfig() */
 char o_cfg[PATH_MAX]     = "/etc/knockd.conf";
 char o_pidfile[PATH_MAX] = "/var/run/knockd.pid";
 char o_logfile[PATH_MAX] = "";
+
+long long g_count = 0;
+#define max_mutex 2 //Those with signals
+#define on 1
+#define off 0
+#define pcap 0
+#define sniff_sync 1
+
+pthread_t pcap_thread;
+pthread_t sniff_thread;
+pthread_mutex_t mutex[max_mutex];
+pthread_mutex_t sniff_mutex;
+pthread_cond_t ready_cond[max_mutex];
+short int sem[max_mutex];
+
+int init_switch( int name, int state) {
+    sem[name] = state;
+    pthread_mutex_init(&mutex[name], NULL);
+    pthread_cond_init(&ready_cond[name], NULL);
+    return 0;
+}
+void destroy_switch( int name) {
+    pthread_mutex_destroy(&mutex[name]);
+}
+
+void turn_on (int name) {
+    pthread_mutex_lock(&mutex[name]);
+    if (sem[name] == on) {
+        pthread_cond_wait(&ready_cond[name], &mutex[name]);
+    }
+    sem[name] = on;
+    pthread_mutex_unlock(&mutex[name]);
+    pthread_cond_signal(&ready_cond[name]);
+}
+
+void turn_off (int name) {
+    pthread_mutex_lock(&mutex[name]);
+    if (sem[name] == off) {
+        pthread_cond_wait(&ready_cond[name], &mutex[name]);
+    }
+    sem[name] = off;
+    pthread_mutex_unlock(&mutex[name]);
+    pthread_cond_signal(&ready_cond[name]);
+}
+
+unsigned char *hmac_sha1(const void *key, int keylen, const unsigned char *data, int datalen, unsigned char *result, unsigned int *resultlen) {
+    return HMAC(EVP_sha1(), key, keylen, data, datalen, result, resultlen);
+}
 
 int main(int argc, char **argv)
 {
@@ -168,7 +266,8 @@ int main(int argc, char **argv)
 	static struct option opts[] =
 	{
 		{"verbose",   no_argument,       0, 'v'},
-		{"debug",     no_argument,       0, 'D'},
+        {"debug",     no_argument,       0, 'D'},
+        {"debug_flg", no_argument,       0, 'F'},
 		{"daemon",    no_argument,       0, 'd'},
 		{"lookup",    no_argument,       0, 'l'},
 		{"interface", required_argument, 0, 'i'},
@@ -187,7 +286,8 @@ int main(int argc, char **argv)
 		switch(opt) {
 			case 0:   break;
 			case 'v': o_verbose = 1; break;
-			case 'D': o_debug = 1; break;
+            case 'D': o_debug = 1; break;
+            case 'F': o_debug_flg = 1; break;
 			case 'd': o_daemon = 1; break;
 			case 'l': o_lookup = 1; break;
 			case 'i': strncpy(o_int, optarg, sizeof(o_int)-1);
@@ -290,7 +390,11 @@ int main(int argc, char **argv)
 		freeifaddrs(ifaddr);
 	}
 
-	generate_pcap_filter();
+/*
+ * door structures are ready. It's time to build pcap filter
+ */
+    init_switch( pcap, on);
+    pthread_create(&pcap_thread, NULL, generate_signal_pcap_filter, NULL);
 
 	if(o_daemon) {
 		FILE *pidfp;
@@ -315,16 +419,29 @@ int main(int argc, char **argv)
 
 	vprint("listening on %s...\n", o_int);
 	logprint("starting up, listening on %s", o_int);
-	ret = 1;
-	while(ret >= 0) {
-		ret = pcap_dispatch(cap, -1, sniff, NULL);
-	}
-	dprint("bailed out of main loop! (ret=%d)\n", ret);
-	pcap_perror(cap, "pcap");
 
-	cleanup(0);
-	/* notreached */
-	exit(0);
+/*
+    init_switch( sniff_sync, on);
+    pthread_create(&sniff_thread, NULL, (void *)syn_sniff, (void *)cap);
+
+    while (1) {
+        sleep(1);
+    }
+ */
+
+    ret = 1;
+    pthread_mutex_init(&sniff_mutex, NULL);
+
+    while(ret >= 0) {
+        ret = pcap_dispatch(cap, -1, sniff, NULL);
+    }
+    dprint("bailed out of main loop! (ret=%d)\n", ret);
+    
+    pcap_perror(cap, "pcap");
+
+    cleanup(0);
+    /* notreached */
+    exit(0);
 }
 
 void dprint(char *fmt, ...)
@@ -437,18 +554,35 @@ void reload(int signum)
 	PMList *lp;
 	opendoor_t *door;
 	int res_cfg;
+    knocker_t *attempt;
 
 	vprint("Re-reading config file: %s\n", o_cfg);
 	logprint("Re-reading config file: %s\n", o_cfg);
 
 	for(lp = doors; lp; lp = lp->next) {
 		door = (opendoor_t*)lp->data;
+        if(door->otp_ports) {
+            /* we have otp door */
+            pthread_cancel(door->otp_ports); //cleaning port filling thread
+            pthread_mutex_destroy(&door->otp_mutex); //releasing mutex
+        }
 		free_door(door);
 		lp->data = NULL;
 	}
 	list_free(doors);
 	doors = NULL;
 
+    for(lp = attempts; lp; lp = lp->next) {
+        attempt = (knocker_t*)lp->data;
+        if(attempt->pcap_filter_exp) // we have attempt for otp door
+            free(attempt->pcap_filter_exp);
+        if (attempt->srchost) {
+            free(attempt->srchost);
+            attempt->srchost = NULL;
+        }
+        free(attempt);
+        lp->data = NULL;
+    }
 	list_free(attempts);
 	attempts = NULL;
 
@@ -477,7 +611,7 @@ void reload(int signum)
 	}
 
 	/* Fix issue #2 by regenerating the PCAP filter post config file re-read */
-	generate_pcap_filter();
+	turn_on(pcap); // build up pcap filter
 
 	return;
 }
@@ -488,7 +622,8 @@ void usage(int exit_code) {
 	printf("  -i, --interface <int>  network interface to listen on (default \"eth0\")\n");
 	printf("  -d, --daemon           run as a daemon\n");
 	printf("  -c, --config <file>    use an alternate config file\n");
-	printf("  -D, --debug            output debug messages\n");
+    printf("  -D, --debug            output debug exept flags messages\n");
+    printf("  -F, --debug_flg        output debug for flags messages\n");
 	printf("  -l, --lookup           lookup DNS names (may be a security risk)\n");
 	printf("  -p, --pidfile          use an alternate pidfile\n");
 	printf("  -g, --logfile          use an alternate logfile\n");
@@ -573,7 +708,8 @@ int parseconfig(char *configfile)
 			ptr = line;
 			ptr++;
 			strncpy(section, ptr, sizeof(section));
-			section[sizeof(section)-1] = '\0';
+            section[sizeof(section)-1] = '\0';
+            section[strlen(line)-2] = '\0';
 			dprint("config: new section: '%s'\n", section);
 			if(!strlen(section)) {
 				fprintf(stderr, "config: line %d: bad section name\n", linenum);
@@ -602,6 +738,7 @@ int parseconfig(char *configfile)
 				door->flag_urg = DONT_CARE;
 				door->one_time_sequences_fd = NULL;
 				door->pcap_filter_exp = NULL;
+                door->otp_ports = (pthread_t)NULL; // make sure we know all the time if we have otp ports in settings
 				doors = list_add(doors, door);
 			}
 		} else {
@@ -669,6 +806,13 @@ int parseconfig(char *configfile)
 							return(i);
 						}
 						dprint_sequence(door, "config: %s: sequence: ", door->name);
+					} else if(!strcmp(key, "OTP")) {
+						int i;
+						i = parse_otp_sequence(ptr, door);
+						if (i > 0) {
+							return(i);
+						}
+						dprint_sequence(door, "config: %s: otp sequence: ", door->name);
 					} else if(!strcmp(key, "ONE_TIME_SEQUENCES")) {
 						if((door->one_time_sequences_fd = fopen(ptr, "r+")) == NULL) {
 							perror(ptr);
@@ -762,7 +906,158 @@ int parseconfig(char *configfile)
 	return(0);
 }
 
-/* Parse a port:protocol sequence. Returns a positive integer on error.
+/*
+ * Parse a key, -otp_change_time, -ports starting point, ip_protection, protocol,protocol... sequence. Returns a positive integer on error.
+ * -seed - used to generate one time port sequence
+ * -otp_change_time - in secs how often we are changing dynamic ports
+ * -psp (unsigned short) ports starting point of the 256 bytes area for port generation. Usually is bigger then 1000
+ * -ip_protection on/off - specifies if we need additional ports generated based on mix of the key and sender ip to validate sender
+ * -protocol - protocols used for these port sequence. The number of protocol names defines the number of ports derived from the key
+ * Example: otp    = AAgR%XXx30O$#, 45, 20000, on, tcp, udp, tcp
+ * in this example tcp, udp and tcp ports will be generated in the range of 20000 - 20255 using the hash sum of AAgR%XXx30O$# and current time and this port sequence will be re regenerated every 45 seconds.
+ * When th first packet hits the first port (tcp) in our case an additional sequesnce of the same protocols (tcp, udp, tcp)
+ * will be generated based on hash sum of concatenation of AAgR%XXx30O$# and source ip address of the packet arrived and current time thus protecting us from mitm attack
+ */
+
+int parse_otp_sequence(char *sequence, opendoor_t *door)
+{
+	char *seed;
+    char *otp_change_time,*otp_port_range;
+    char *ip_protection;
+	char *protocol;
+//    unsigned tmp_seq_max;
+
+	seed = (char *)trim(strsep(&sequence, ","));
+    if(strlen(seed) >= MAX_SEED_LEN) {
+        dprint("Key length is grater then %d\n", MAX_SEED_LEN);
+        cleanup(1);
+    }
+    strcpy(door->seed, seed);
+    otp_change_time = strsep(&sequence, ",");
+    door->otp_change_time = (unsigned short)atoi(otp_change_time);
+    otp_port_range = strsep(&sequence, ",");
+    door->otp_port_range = (unsigned short)atoi(otp_port_range);
+    ip_protection = strsep(&sequence, ",");
+    ip_protection = strtoupper(trim(ip_protection));
+    if( !strcmp(ip_protection,"ON") ) {
+        door->ip_protection = 1;
+//        tmp_seq_max = SEQ_MAX/2;
+    } else if ( !strcmp(ip_protection,"OFF") ) {
+        door->ip_protection = 0;
+//        tmp_seq_max = SEQ_MAX;
+    } else {
+        fprintf(stderr, "config: section %s: Invalid ip_protection value: %s.\n", door->name, ip_protection);
+        logprint("error: section %s: Invalid ip_protection value: %s.\n", door->name, ip_protection);
+        return(1);
+    }
+    
+	door->seqcount = 0;	/* reset seqcount */
+	while( (protocol = strsep(&sequence, ",")) != NULL ) {
+		if(door->seqcount >= SEQ_MAX) {
+			fprintf(stderr, "config: section %s: too many ports %d in knock sequence for otp. MAX = %d.\n", door->name, door->seqcount, SEQ_MAX);
+			logprint("error: section %s: too many ports %d in knock sequence for otp. MAX = %d.\n", door->name, door->seqcount, SEQ_MAX);
+			return(1);
+		}
+		protocol = strtoupper(trim(protocol));
+		if(!strcmp(protocol, "TCP")){
+			door->protocol[door->seqcount] = IPPROTO_TCP;
+		} else if(!strcmp(protocol, "UDP")) {
+			door->protocol[door->seqcount] = IPPROTO_UDP;
+		} else {
+			fprintf(stderr,"config: section %s: unknown protocol %s in knock sequence\n", door->name, protocol);
+			logprint("error: section %s: unknown protocol %s in knock sequence\n", door->name, protocol);
+			return(1);
+		}
+        door->seqcount++;
+    }
+    door->init_seqcount = door->seqcount; //For ip_protect case
+/*
+ We start filling all the ports sequence derived from hmac_sha1 hash from here
+ */
+    
+    door->tm = 0;
+    
+    pthread_mutex_init(&door->otp_mutex, NULL); //Create mutex for port sequence access
+    pthread_create(&door->otp_ports, NULL, shedule_port_filling, (void*)door); // Start scheduling
+    return(0);
+
+
+}
+
+void *shedule_port_filling(void *ptr) {
+    double t;
+    int rest;
+    long long tm, dtm;
+    opendoor_t *door = (opendoor_t *)ptr;
+    unsigned short ct = door->otp_change_time;
+    
+    while (1) {
+        t = (double) time (NULL); //Current time
+        tm = (long long)floor(t/ct); //our period
+        pthread_mutex_lock(&door->otp_mutex); // We need exclusive access to door->tm
+        dtm = door->tm;
+        pthread_mutex_unlock(&door->otp_mutex); // We releaseed exclusive access to door->tm
+        if (dtm == tm) {
+            /* We are still in the same period just wait a bit */
+            rest = (int)((double)((tm + 1)*ct) - t);
+            sleep(rest);
+        } else if (dtm == 0) {
+            /* first time, don't need to rebuild pcap filter, it will be rebuilded from the parsing subroutine */
+            pthread_mutex_lock(&door->otp_mutex); // We need exclusive access to door->tm
+            door->tm = tm; // stored our period
+            pthread_mutex_unlock(&door->otp_mutex); // We releaseed exclusive access to door->tm
+            free(door->pcap_filter_exp);
+            door->pcap_filter_exp = NULL;
+            fill_otp_ports(door->seed, door->sequence, 0, door->seqcount, tm, door->otp_port_range, &door->otp_mutex);
+        } else  {
+            pthread_mutex_lock(&door->otp_mutex); // We need exclusive access to door->tm
+            door->tm = tm;
+            pthread_mutex_unlock(&door->otp_mutex); // We releaseed exclusive access to door->tm
+            free(door->pcap_filter_exp);
+            door->pcap_filter_exp = NULL;
+            fill_otp_ports(door->seed, door->sequence, 0, door->seqcount, tm, door->otp_port_range, &door->otp_mutex);
+            turn_on(pcap); // Allowed to rebuild pcap filter
+        }
+
+    }
+
+}
+
+
+int fill_otp_ports(char *seed, unsigned short *sequence, unsigned start_index, unsigned end_index, long long tm, unsigned short otp_port_range, pthread_mutex_t *mt ) {
+    unsigned char time_buf[40];
+    unsigned char out[256] = {0};
+    unsigned int len = sizeof(out), i, l;
+
+    
+    sprintf((char *)time_buf, "%lld", tm); //Prepared a time in secs, that will be changed every otp_change_time sec
+    hmac_sha1((unsigned char *)seed, (int)strlen((const char *)seed), time_buf, (int)strlen((const char *)time_buf), out, &len); //get random number out of time and seed. Should be 20 bytes long
+
+    pthread_mutex_lock(mt);
+    l = 0;
+/*
+    dprint("tm = '%s' key = '%s' sha = '", time_buf, seed);
+    for (i = 0; i < len; i++) {
+        status |= out[i];
+        dprint("%02X", (unsigned int)(status & 0xFF) );
+        status = 0x00;
+    }
+    dprint("'\n");
+ */
+    
+    for (i = start_index; i < end_index; i++) {
+        if (l > len) l = 0; // If seqcount > len
+        sequence[i] = otp_port_range + (unsigned short)out[l];
+//        dprint("port = %d ", (int)((unsigned short)out[l]));
+        l++;
+    }
+//    dprint("\n");
+    pthread_mutex_unlock(mt);
+	return(0);
+}
+
+/*
+ * Parse a port:protocol sequence. Returns a positive integer on error.
  */
 int parse_port_sequence(char *sequence, opendoor_t *door)
 {
@@ -824,11 +1119,11 @@ long get_next_one_time_sequence(opendoor_t *door)
 	char line[PATH_MAX+1];
 	int pos;
 
-	pos = ftell(door->one_time_sequences_fd);
+	pos = (int)ftell(door->one_time_sequences_fd);
 	while(fgets(line, PATH_MAX, door->one_time_sequences_fd)) {
 		trim(line);
 		if(strlen(line) == 0 || line[0] == '#') {
-			pos = ftell(door->one_time_sequences_fd);
+			pos = (int)ftell(door->one_time_sequences_fd);
 			continue;
 		}
 		if(parse_port_sequence(line, door) > 0) {
@@ -889,33 +1184,200 @@ long get_current_one_time_sequence_position(opendoor_t *door)
 	return(-1);
 }
 
+/*
+ * We use generate_pcap_filter() from this function asynchronously by setting signal outside to start its execution
+ * This is because our otp based port sequence changes from time to time and we need pcap filter to adjust accordingly
+ */
+void *generate_signal_pcap_filter(void *ptr) {
+    while (1) {
+        generate_pcap_filter(); // do the job
+//        g_count++;
+        turn_off(pcap); // wait here for next turn
+    }
+}
+
 /* Generate and set the filter for pcap. That way only the relevant packets will
  * be forwarded to us (in sniff()). Note that generate_pcap_filter() will first
  * generate a subfilter (=substring of the whole filter string) for each door if
  * door->pcap_filter_exp is NULL. This behaviour can be used for doors with one
  * time sequences, where the subfilter has to be generated after each sequence.
  */
+
+static char *buffer = NULL;
+static size_t bufsize = 0;
+
+void generate_tcp_udp_filter(opendoor_t *door, unsigned short seqcount, unsigned short *protocol, unsigned short *sequence) {
+    ip_literal_t *myip;
+    char port_str[10];     /* used by snprintf to convert unsigned short --> string */
+    short head_set = 0;       /* flag indicating if protocol head is set (i.e. "((tcp dst port") */
+    short tcp_present = 0; /* flag indicating if TCP is used */
+    short udp_present = 0; /* flag indicating if UDP is used */
+    unsigned int i;
+
+    head_set = 0;
+    tcp_present = 0;
+    udp_present = 0;
+
+    /* allocate memory for buffer if needed.
+     * The first allocation will be 200 Bytes (should be large enough for common sequences). If there is
+     * not enough space, a call to realloc_strcat() will eventually increase its size. The buffer will be
+     * reused for successive doors */
+    if(buffer == NULL) {
+        bufsize = 200;
+        buffer = (char*)malloc(sizeof(char) * bufsize);
+        if(buffer == NULL) {
+            perror("malloc");
+            cleanup(1);
+        }
+        buffer[0] = '\0';
+    }
+
+    /* accept only incoming packets */
+    for(myip = myips; myip != NULL; myip = myip->next) {
+        if(!head_set) {
+            bufsize = realloc_strcat(&buffer, "((dst host ", bufsize);
+            head_set = 1;
+        } else {
+            bufsize = realloc_strcat(&buffer, " or dst host ", bufsize);
+        }
+        bufsize = realloc_strcat(&buffer, door->target ? door->target : myip->value, bufsize);
+    }
+
+    bufsize = realloc_strcat(&buffer, ") and (", bufsize);
+
+    head_set = 0;
+
+    /* generate filter for all TCP ports (i.e. "((tcp dst port 4000 or 4001 or 4002) and tcp[tcpflags] & tcp-syn != 0)" */
+    for(i = 0; i < seqcount; i++) {
+        if(protocol[i] == IPPROTO_TCP) {
+            if(!head_set) {        /* first TCP port in the sequence */
+                bufsize = realloc_strcat(&buffer, "((tcp dst port ", bufsize);
+                head_set = 1;
+                tcp_present = 1;
+            } else {        /* not the first TCP port in the sequence */
+                bufsize = realloc_strcat(&buffer, " or ", bufsize);
+            }
+            snprintf(port_str, sizeof(port_str), "%hu", sequence[i]);        /* unsigned short to string */
+            bufsize = realloc_strcat(&buffer, port_str, bufsize);            /* append port number */
+        }
+    }
+    if(tcp_present) {
+        bufsize = realloc_strcat(&buffer, ")", bufsize);        /* close parentheses of TCP ports */
+    }
+
+    /* append the TCP flag filters */
+    if(tcp_present) {
+        if(door->flag_fin != DONT_CARE) {
+            bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-fin ", bufsize);
+            if(door->flag_fin == SET) {
+                bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+            }
+            if(door->flag_fin == NOT_SET) {
+                bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+            }
+        }
+        if(door->flag_syn != DONT_CARE) {
+            bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-syn ", bufsize);
+            if(door->flag_syn == SET) {
+                bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+            }
+            if(door->flag_syn == NOT_SET) {
+                bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+            }
+        }
+        if(door->flag_rst != DONT_CARE) {
+            bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-rst ", bufsize);
+            if(door->flag_rst == SET) {
+                bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+            }
+            if(door->flag_rst == NOT_SET) {
+                bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+            }
+        }
+        if(door->flag_psh != DONT_CARE) {
+            bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
+            if(door->flag_psh == SET) {
+                bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+            }
+            if(door->flag_psh == NOT_SET) {
+                bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+            }
+        }
+        if(door->flag_ack != DONT_CARE) {
+            bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-ack ", bufsize);
+            if(door->flag_ack == SET) {
+                bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+            }
+            if(door->flag_ack == NOT_SET) {
+                bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+            }
+        }
+        if(door->flag_urg != DONT_CARE) {
+            bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-urg ", bufsize);
+            if(door->flag_urg == SET) {
+                bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+            }
+            if(door->flag_urg == NOT_SET) {
+                bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+            }
+        }
+        bufsize = realloc_strcat(&buffer, ")", bufsize);        /* close parentheses of flags */
+    }
+
+    /* append filter for all UDP ports (i.e. "(udp dst port 6543 or 6544 or 6545)" */
+    head_set = 0;
+
+    for(i = 0; i < seqcount; i++) {
+        if(protocol[i] == IPPROTO_UDP) {
+            if(!head_set) {        /* first UDP port in the sequence */
+                if(tcp_present) {
+                    bufsize = realloc_strcat(&buffer, " or ", bufsize);
+                }
+                bufsize = realloc_strcat(&buffer, "(udp dst port ", bufsize);
+                head_set = 1;
+                udp_present = 1;
+            } else {        /* not the first UDP port in the sequence */
+                bufsize = realloc_strcat(&buffer, " or ", bufsize);
+            }
+            snprintf(port_str, sizeof(port_str), "%hu", sequence[i]);        /* unsigned short to string */
+            bufsize = realloc_strcat(&buffer, port_str, bufsize);            /* append port number */
+        }
+    }
+    if(udp_present) {
+        bufsize = realloc_strcat(&buffer, ")", bufsize);        /* close parentheses of UDP ports */
+    }
+
+    bufsize = realloc_strcat(&buffer, "))", bufsize);        /* close parantheses around port filters */
+
+    /* test if in any of the precedent calls to realloc_strcat() failed. We can do this safely here because
+     * realloc_strcat() returns 0 on failure and if a buffer size of 0 is passed to it, the function does
+     * nothing but returning 0 again. Because we never read buffer in the above code, it is secure to test
+     * for failure only at this point (it makes the code more readable than checking for failure each time
+     * realloc_strcat() is called). */
+    if(bufsize == 0) {
+        perror("realloc");
+        cleanup(1);
+    }
+}
+
 void generate_pcap_filter()
 {
-	PMList *lp;
+	PMList *lp, *lpa;
+    
 	opendoor_t *door;
-	ip_literal_t *myip;
-	char *buffer = NULL;   /* temporary buffer to create the individual filter strings */ 
-	size_t bufsize = 0;    /* size of buffer */
-	char port_str[10];     /* used by snprintf to convert unsigned short --> string */
-	short head_set = 0;	   /* flag indicating if protocol head is set (i.e. "((tcp dst port") */
-	short tcp_present = 0; /* flag indicating if TCP is used */
-	short udp_present = 0; /* flag indicating if UDP is used */
-	unsigned int i;
-	short modified_filters = 0;  /* flag indicating if at least one filter has changed --> recompile the filter */
-	struct bpf_program bpf_prog; /* compiled BPF filter program */
+    knocker_t *attempt;
+    short modified_filters = 0;   /* flag indicating if at least one filter has changed --> recompile the filter */
+    short modified_pfilters = 0;  /* flag indicating if at least one protected by src ip filter has changed --> recompile the filter */
+    short tmpf = 0;               /* temporary variable for modified_pfilters */
+	struct bpf_program bpf_prog;  /* compiled BPF filter program */
 
 	/* generate subfilters for each door having a NULL pcap_filter_exp
 	 *
 	 * Example filter for one single door:
 	 * ((tcp dst port 8000 or 8001 or 8002) and tcp[tcpflags] & tcp-syn != 0) or (udp dst port 4000 or 4001)
 	 */
-	for(lp = doors; lp; lp = lp->next) {
+    buffer = NULL;
+    for(lp = doors; lp; lp = lp->next) {
 		door = (opendoor_t*)lp->data;
 
 		if(door->pcap_filter_exp != NULL) {
@@ -924,151 +1386,10 @@ void generate_pcap_filter()
 
 		/* if we get here at least one door had a pcap_filter_exp == NULL */
 		modified_filters = 1;
+        
+        generate_tcp_udp_filter(door, door->seqcount, door->protocol, door->sequence);
 
-		head_set = 0;
-		tcp_present = 0;
-		udp_present = 0;
-
-		/* allocate memory for buffer if needed.
-		 * The first allocation will be 200 Bytes (should be large enough for common sequences). If there is
-		 * not enough space, a call to realloc_strcat() will eventually increase its size. The buffer will be
-		 * reused for successive doors */
-		if(buffer == NULL) {
-			bufsize = 200;
-			buffer = (char*)malloc(sizeof(char) * bufsize);
-			if(buffer == NULL) {
-				perror("malloc");
-				cleanup(1);
-			}
-			buffer[0] = '\0';
-		}
-
-		/* accept only incoming packets */
-		for(myip = myips; myip != NULL; myip = myip->next) {
-			if(!head_set) {
-				bufsize = realloc_strcat(&buffer, "((dst host ", bufsize);
-				head_set = 1;
-			} else {
-				bufsize = realloc_strcat(&buffer, " or dst host ", bufsize);
-			}
-			bufsize = realloc_strcat(&buffer, door->target ? door->target : myip->value, bufsize);
-		}
-
-		bufsize = realloc_strcat(&buffer, ") and (", bufsize);
-		head_set = 0;
-
-		/* generate filter for all TCP ports (i.e. "((tcp dst port 4000 or 4001 or 4002) and tcp[tcpflags] & tcp-syn != 0)" */
-		for(i = 0; i < door->seqcount; i++) {
-			if(door->protocol[i] == IPPROTO_TCP) {
-				if(!head_set) {		/* first TCP port in the sequence */
-					bufsize = realloc_strcat(&buffer, "((tcp dst port ", bufsize);
-					head_set = 1;
-					tcp_present = 1;
-				} else {		/* not the first TCP port in the sequence */
-					bufsize = realloc_strcat(&buffer, " or ", bufsize);
-				}
-				snprintf(port_str, sizeof(port_str), "%hu", door->sequence[i]);		/* unsigned short to string */
-				bufsize = realloc_strcat(&buffer, port_str, bufsize);			/* append port number */
-			}
-		}
-		if(tcp_present) {
-			bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of TCP ports */
-		}
-
-		/* append the TCP flag filters */
-		if(tcp_present) {
-			if(door->flag_fin != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-fin ", bufsize);
-				if(door->flag_fin == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_fin == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_syn != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-syn ", bufsize);
-				if(door->flag_syn == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_syn == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_rst != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-rst ", bufsize);
-				if(door->flag_rst == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_rst == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_psh != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
-				if(door->flag_psh == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_psh == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_ack != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-ack ", bufsize);
-				if(door->flag_ack == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_ack == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_urg != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-urg ", bufsize);
-				if(door->flag_urg == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_urg == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of flags */
-		}
-
-		/* append filter for all UDP ports (i.e. "(udp dst port 6543 or 6544 or 6545)" */
-		head_set = 0;
-		for(i = 0; i < door->seqcount; i++) {
-			if(door->protocol[i] == IPPROTO_UDP) {
-				if(!head_set) {		/* first UDP port in the sequence */
-					if(tcp_present) {
-						bufsize = realloc_strcat(&buffer, " or ", bufsize);
-					}
-					bufsize = realloc_strcat(&buffer, "(udp dst port ", bufsize);
-					head_set = 1;
-					udp_present = 1;
-				} else {		/* not the first UDP port in the sequence */
-					bufsize = realloc_strcat(&buffer, " or ", bufsize);
-				}
-				snprintf(port_str, sizeof(port_str), "%hu", door->sequence[i]);		/* unsigned short to string */
-				bufsize = realloc_strcat(&buffer, port_str, bufsize);			/* append port number */
-			}
-		}
-		if(udp_present) {
-			bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of UDP ports */
-		}
-
-		bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parantheses around port filters */
-
-		/* test if in any of the precedent calls to realloc_strcat() failed. We can do this safely here because
-		 * realloc_strcat() returns 0 on failure and if a buffer size of 0 is passed to it, the function does
-		 * nothing but returning 0 again. Because we never read buffer in the above code, it is secure to test
-		 * for failure only at this point (it makes the code more readable than checking for failure each time
-		 * realloc_strcat() is called). */
-		if(bufsize == 0) {
-			perror("realloc");
-			cleanup(1);
-		}
-
-		/* allocate the buffer in door holding the filter string, copy it and prepare buffer for being reused. */
+        /* allocate the buffer in door holding the filter string, copy it and prepare buffer for being reused. */
 		door->pcap_filter_exp = (char*)malloc(strlen(buffer) + 1);
 		if(door->pcap_filter_exp == NULL) {
 			perror("malloc");
@@ -1078,8 +1399,48 @@ void generate_pcap_filter()
 		dprint("Adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
 		buffer[0] = '\0';	/* "clear" the buffer */
 	}
+    
+    for(lpa = attempts; lpa; lpa = lpa->next) {
+        attempt = (knocker_t*)lpa->data;
+        if(attempt->door->otp_ports == 0) {
+            /* This is not us */
+                continue;
+            }
+        if(attempt->pcap_filter_exp != 0) {
+                continue;
+            }
 
+        /* if we get here at least one attempt had ip_protection set and needs to rebuild its pcap_filter_exp */
 
+        modified_pfilters++;
+
+        if(buffer == NULL) {
+            bufsize = 200;
+            buffer = (char*)malloc(sizeof(char) * bufsize);
+            if(buffer == NULL) {
+                perror("malloc");
+                cleanup(1);
+            }
+            buffer[0] = '\0';
+        }
+        bufsize = realloc_strcat(&buffer, "(src host ", bufsize);
+        bufsize = realloc_strcat(&buffer, attempt->src, bufsize);
+        bufsize = realloc_strcat(&buffer, " and (", bufsize);
+        generate_tcp_udp_filter(attempt->door, attempt->p_seqcount, attempt->p_protocol, attempt->p_sequence); // Creating a filter for this guy
+        bufsize = realloc_strcat(&buffer, "))", bufsize);
+        attempt->pcap_filter_exp = (char*)malloc(strlen(buffer) + 1);
+        if(attempt->pcap_filter_exp == NULL) {
+            perror("malloc");
+            cleanup(1);
+        }
+        strcpy(attempt->pcap_filter_exp, buffer);
+        dprint("Adding pcap expression for protected door '%s' from src %s: %s\n", attempt->door->name, attempt->src, attempt->pcap_filter_exp);
+        buffer[0] = '\0';    /* "clear" the buffer */
+
+    }
+    tmpf = modified_pfilters;
+
+    
 	/* generate the whole pcap filter string if a filter had been modified. Reuse buffer (already "cleared").
 	 *
 	 * Note that we don't check if a port is included in multiple doors, we simply concatenate the individual door
@@ -1087,20 +1448,53 @@ void generate_pcap_filter()
 	 *
 	 * Example filter for two doors with sequences 8000:tcp,4000:udp,8001:tcp,4001:udp,8002:tcp (syn) and 
 	 * 1234:tcp,4567:tcp,8901:tcp (syn,ack) :
-	 * dst host the.hosts.ip.address and (
+	 * (dst host the.hosts.ip.address and (
 	 *      ((tcp dst port 8000 or 8001 or 8002) and tcp[tcpflags] & tcp-syn != 0) or (udp dst port 4000 or 4001)
 	 *   or ((tcp dst port 1234 or 4567 or 8901) and tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack != 0)
-	 * )
+	 * ) or (src host the.src.hosts.ip.address and (dst host the.hosts.ip.address and (
+     *      ((tcp dst port 8000 or 8001 or 8002) and tcp[tcpflags] & tcp-syn != 0) or (udp dst port 4000 or 4001)
+     *   or ((tcp dst port 1234 or 4567 or 8901) and tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack != 0)
+     * ))
 	 */
-	if(modified_filters) {
+    
+    if(modified_filters) {
 		/* iterate over all doors */
-		for(lp = doors; lp; lp = lp->next) {
-			door = (opendoor_t*)lp->data;
-			bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);
-			if(lp->next != NULL) {
-				bufsize = realloc_strcat(&buffer, " or ", bufsize);
-			}
-		}
+        for(lp = doors; lp; lp = lp->next) {
+            door = (opendoor_t*)lp->data;
+            bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);
+            if(lp->next != NULL) {
+                bufsize = realloc_strcat(&buffer, " or ", bufsize);
+            }
+        }
+    }
+    if(modified_pfilters > 0) {
+        /* We have some protected attempts */
+        if(!modified_filters) {
+            /* We do not have some door filters to update, we have to do it here */
+            for(lp = doors; lp; lp = lp->next) {
+                door = (opendoor_t*)lp->data;
+                bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);
+                if(lp->next != NULL) {
+                    bufsize = realloc_strcat(&buffer, " or ", bufsize);
+                }
+            }
+        }
+        bufsize = realloc_strcat(&buffer, " or ", bufsize);
+        /* iterate over all attempts */
+        for(lpa = attempts; lpa; lpa = lpa->next) {
+            attempt = (knocker_t*)lpa->data;
+            if(attempt->pcap_filter_exp == NULL) {
+                    continue;
+                }
+            bufsize = realloc_strcat(&buffer, attempt->pcap_filter_exp, bufsize);
+            modified_pfilters--;
+            if(modified_pfilters > 0) {
+                /* Still have some more expressions to add */
+                bufsize = realloc_strcat(&buffer, " or ", bufsize);
+            }
+        }
+    }
+    if(modified_filters || tmpf) {
 
 		/* test if in any of the precedent calls to realloc_strcat() failed. See above why this is ok to do this only
 		 * at this point */
@@ -1109,7 +1503,7 @@ void generate_pcap_filter()
 			cleanup(1);
 		}
 
-		if(pcap_compile(cap, &bpf_prog, buffer, 1, 0) < 0) {	/* optimize filter (1), no netmask (0) (we're not interested in broadcasts) */
+        if(pcap_compile(cap, &bpf_prog, buffer, 1, 0) < 0) {	/* optimize filter (1), no netmask (0) (we're not interested in broadcasts) */
 			pcap_perror(cap, "pcap");
 			cleanup(1);
 		}
@@ -1118,8 +1512,9 @@ void generate_pcap_filter()
 			cleanup(1);
 		}
 		pcap_freecode(&bpf_prog);
+//        dprint("The result filter: '%s'\n", buffer);
 		free(buffer);
-	}
+    }
 }
 
 /* Reallocating strcat -- appends the src string to the dest string (pointer to
@@ -1134,6 +1529,7 @@ void generate_pcap_filter()
  * IMPORTANT: dest has to be an allocated buffer (not static!), such that it can
  * be reallocated with realloc() !!!
  */
+
 size_t realloc_strcat(char **dest, const char *src, size_t size)
 {
 	size_t needed_size;
@@ -1316,6 +1712,12 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
 	/* if tcp, check the flags to ignore the packets we don't want
 	 * (don't even use it to cancel sequences)
 	 */
+    int tmp = o_debug;
+    if (o_debug_flg)
+        o_debug = 1;
+    else
+        o_debug = 0;
+
 	if(ip->ip_p == IPPROTO_TCP) {
 		if(door->flag_fin != DONT_CARE) {
 			if(door->flag_fin == SET && !(tcp->th_flags & TH_FIN)) {
@@ -1378,6 +1780,7 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
 			}
 		}
 	}
+    o_debug = tmp;
 	return 1;
 }
 
@@ -1388,85 +1791,92 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
  */
 void process_attempt(knocker_t *attempt)
 {
-	/* level up! */
-	attempt->stage++;
-	if(attempt->srchost) {
-		vprint("%s (%s): %s: Stage %d\n", attempt->src, attempt->srchost, attempt->door->name, attempt->stage);
-		logprint("%s (%s): %s: Stage %d", attempt->src, attempt->srchost, attempt->door->name, attempt->stage);
-	} else {
-		vprint("%s: %s: Stage %d\n", attempt->src, attempt->door->name, attempt->stage);
-		logprint("%s: %s: Stage %d", attempt->src, attempt->door->name, attempt->stage);
-	}
-	if(attempt->stage >= attempt->door->seqcount) {
-		if(attempt->srchost) {
-			vprint("%s (%s): %s: OPEN SESAME\n", attempt->src, attempt->srchost, attempt->door->name);
-			logprint("%s (%s): %s: OPEN SESAME", attempt->src, attempt->srchost, attempt->door->name);
-		} else {
-			vprint("%s: %s: OPEN SESAME\n", attempt->src, attempt->door->name);
-			logprint("%s: %s: OPEN SESAME", attempt->src, attempt->door->name);
-		}
-		if(attempt->door->start_command && strlen(attempt->door->start_command)) {
-			/* run the associated command */
-			if(fork() == 0) {
-				/* child */
-				char parsed_start_cmd[PATH_MAX];
-				char parsed_stop_cmd[PATH_MAX];
-				size_t cmd_len = 0;
+    int seqcount;
+    
+    /* level up! */
+    attempt->stage++;
+    if(attempt->srchost) {
+        vprint("%s (%s): %s: Stage %d\n", attempt->src, attempt->srchost, attempt->door->name, attempt->stage);
+        logprint("%s (%s): %s: Stage %d", attempt->src, attempt->srchost, attempt->door->name, attempt->stage);
+    } else {
+        vprint("%s: %s: Stage %d\n", attempt->src, attempt->door->name, attempt->stage);
+        logprint("%s: %s: Stage %d", attempt->src, attempt->door->name, attempt->stage);
+    }
+    seqcount = attempt->door->seqcount;
+    if(attempt->door->ip_protection == 1 )
+        seqcount = attempt->p_seqcount;
+    if(attempt->stage >= seqcount) {
+        if(attempt->srchost) {
+            vprint("%s (%s): %s: OPEN SESAME\n", attempt->src, attempt->srchost, attempt->door->name);
+            logprint("%s (%s): %s: OPEN SESAME", attempt->src, attempt->srchost, attempt->door->name);
+        } else {
+            vprint("%s: %s: OPEN SESAME\n", attempt->src, attempt->door->name);
+            logprint("%s: %s: OPEN SESAME", attempt->src, attempt->door->name);
+        }
+        if(attempt->door->start_command && strlen(attempt->door->start_command)) {
+            /* run the associated command */
+            if(fork() == 0) {
+                /* child */
+                char parsed_start_cmd[PATH_MAX];
+                char parsed_stop_cmd[PATH_MAX];
+                size_t cmd_len = 0;
 
-				setsid();
+                setsid();
 
-				/* parse start and stop command and check if the parsed commands fit in the given buffer. Don't
-				 * execute any command if one of them has been truncated */
-				cmd_len = parse_cmd(parsed_start_cmd, sizeof(parsed_start_cmd), attempt->door->start_command, attempt->src);
-				if(cmd_len >= sizeof(parsed_start_cmd)) {	/* command has been truncated --> do NOT execute it */
-					fprintf(stderr, "error: parsed start command has been truncated! --> won't execute it\n");
-					logprint("error: parsed start command has been truncated! --> won't execute it");
-					exit(0); /* exit child */
-				}
-				if(attempt->door->stop_command) {
-					cmd_len = parse_cmd(parsed_stop_cmd, sizeof(parsed_stop_cmd), attempt->door->stop_command, attempt->src);
-					if(cmd_len >= sizeof(parsed_stop_cmd)) {	/* command has been truncated --> do NOT execute it */
-						fprintf(stderr, "error: parsed stop command has been truncated! --> won't execute start command\n");
-						logprint("error: parsed stop command has been truncated! --> won't execute start command");
-						exit(0); /* exit child */
-					}
-				}
+                /* parse start and stop command and check if the parsed commands fit in the given buffer. Don't
+                 * execute any command if one of them has been truncated */
+                cmd_len = parse_cmd(parsed_start_cmd, sizeof(parsed_start_cmd), attempt->door->start_command, attempt->src);
+                if(cmd_len >= sizeof(parsed_start_cmd)) {    /* command has been truncated --> do NOT execute it */
+                    fprintf(stderr, "error: parsed start command has been truncated! --> won't execute it\n");
+                    logprint("error: parsed start command has been truncated! --> won't execute it");
+                    exit(0); /* exit child */
+                }
+                if(attempt->door->stop_command) {
+                    cmd_len = parse_cmd(parsed_stop_cmd, sizeof(parsed_stop_cmd), attempt->door->stop_command, attempt->src);
+                    if(cmd_len >= sizeof(parsed_stop_cmd)) {    /* command has been truncated --> do NOT execute it */
+                        fprintf(stderr, "error: parsed stop command has been truncated! --> won't execute start command\n");
+                        logprint("error: parsed stop command has been truncated! --> won't execute start command");
+                        exit(0); /* exit child */
+                    }
+                }
 
-				/* all parsing ok --> execute the parsed (%IP% = source IP) command */
-				exec_cmd(parsed_start_cmd, attempt->door->name);
-				/* if stop_command is set, sleep for cmd_timeout and run it*/
-				if(attempt->door->stop_command){
-					sleep(attempt->door->cmd_timeout);
-					if(attempt->srchost) {
-						vprint("%s (%s): %s: command timeout\n", attempt->src, attempt->srchost, attempt->door->name);
-						logprint("%s (%s): %s: command timeout", attempt->src, attempt->srchost, attempt->door->name);
-					} else {
-						vprint("%s: %s: command timeout\n", attempt->src, attempt->door->name);
-						logprint("%s: %s: command timeout", attempt->src, attempt->door->name);
-					}
-					exec_cmd(parsed_stop_cmd, attempt->door->name);
-				}
+                /* all parsing ok --> execute the parsed (%IP% = source IP) command */
+                exec_cmd(parsed_start_cmd, attempt->door->name);
+                /* if stop_command is set, sleep for cmd_timeout and run it*/
+                if(attempt->door->stop_command){
+                    sleep((int)attempt->door->cmd_timeout);
+                    if(attempt->srchost) {
+                        vprint("%s (%s): %s: command timeout\n", attempt->src, attempt->srchost, attempt->door->name);
+                        logprint("%s (%s): %s: command timeout", attempt->src, attempt->srchost, attempt->door->name);
+                    } else {
+                        vprint("%s: %s: command timeout\n", attempt->src, attempt->door->name);
+                        logprint("%s: %s: command timeout", attempt->src, attempt->door->name);
+                    }
+                    exec_cmd(parsed_stop_cmd, attempt->door->name);
+                }
 
-				exit(0); /* exit child */
-			}
-		}
-		/* change to next sequence if one time sequences are used.
-		 * Note that here the door will eventually be closed in
-		 * get_new_one_time_sequence() if no more sequences are left */
-		if(attempt->door->one_time_sequences_fd) {
-			if (disable_used_one_time_sequence(attempt->door)) {
-				return;
-			}
+                exit(0); /* exit child */
+            }
+        }
+        /* change to next sequence if one time sequences are used.
+         * Note that here the door will eventually be closed in
+         * get_new_one_time_sequence() if no more sequences are left */
+        if(attempt->door->one_time_sequences_fd) {
+            if (disable_used_one_time_sequence(attempt->door)) {
+                return;
+            }
 
-			get_new_one_time_sequence(attempt->door);
+            get_new_one_time_sequence(attempt->door);
 
-			/* update pcap filter */
-			free(attempt->door->pcap_filter_exp);
-			attempt->door->pcap_filter_exp = NULL;
-			generate_pcap_filter();
-		}
-	}
+            /* update pcap filter */
+            free(attempt->door->pcap_filter_exp);
+            attempt->door->pcap_filter_exp = NULL;
+//          generate_pcap_filter();    // We don't need it anymore
+            turn_on(pcap);
+        }
+    }
 }
+
 
 /* Sniff an interface, looking for port-knock sequences
  */
@@ -1490,6 +1900,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	PMList *lp;
 	knocker_t *attempt = NULL;
 	PMList *found_attempts = NULL, *found_attempt;
+    int jj;
+
+    int seqcount;
+
+//    pthread_mutex_lock(&sniff_mutex); // We need exclusive access for otp ports
 
 	if(lltype == DLT_EN10MB) {
 		eth = (struct ether_header*)packet;
@@ -1561,7 +1976,12 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		attempt = (knocker_t*)lp->data;
 
 		/* Check if the sequence has been completed */
-		if(attempt->stage >= attempt->door->seqcount) {
+        
+        if(attempt->door->otp_ports) // we keep port sequence for this door in attempt
+            seqcount = attempt->p_seqcount;
+        else
+            seqcount = attempt->door->seqcount;
+        if(attempt->stage >= seqcount) {
 			dprint("removing successful knock attempt (%s)\n", attempt->src);
 			nix = 1;
 		}
@@ -1605,6 +2025,10 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				free(attempt->srchost);
 				attempt->srchost = NULL;
 			}
+            if (attempt->pcap_filter_exp) {
+                free(attempt->pcap_filter_exp);
+                attempt->pcap_filter_exp = NULL;
+            }
 			list_free(lp);
 		}
 
@@ -1625,24 +2049,35 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		found_attempts = list_add(found_attempts, NULL);
 	}
 
-	for (found_attempt = found_attempts; found_attempt != NULL; found_attempt = found_attempt->next) {
+
+    unsigned short t_port, t_proto;
+
+    for (found_attempt = found_attempts; found_attempt != NULL; found_attempt = found_attempt->next) {
 		attempt = (knocker_t*)found_attempt->data;
 		found_attempt->data = NULL;
 
 		if(attempt) {
 			int flagsmatch = flags_match(attempt->door, ip, tcp);
-			if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
-					dport == attempt->door->sequence[attempt->stage]) {
+            if(attempt->door->otp_ports != (pthread_t)NULL) {
+                /* We have everything in attempt */
+                t_port = attempt->p_sequence[attempt->stage];
+                t_proto = attempt->p_protocol[attempt->stage];
+            } else {
+                t_port = attempt->door->sequence[attempt->stage];
+                t_proto = attempt->door->protocol[attempt->stage];
+            }
+            if(flagsmatch && ip->ip_p == t_proto &&	dport == t_port) {
 				process_attempt(attempt);
-			} else if(flagsmatch == 0) {
+            } else if(flagsmatch == 0) {
 				/* TCP flags didn't match -- just ignore this packet, don't
 				 * invalidate the knock.
 				 */
-			} else {
+            } else {
 				/* invalidate the knock sequence, it will be removed in the
 				 * next sniff() call.
 				 */
-				attempt->stage = -1;
+//                dprint("We have attempt: %d flagsmatch = %d ip->ip_p = %d t_proto = %d dport = %d t_port = %d\n", (int)attempt->stage, (int)flagsmatch, (int)ip->ip_p, (int)t_proto, (int)dport, (int)t_port);
+                attempt->stage = -1;
 			}
 		} else {
 			/* did they hit the first port correctly? */
@@ -1652,8 +2087,13 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				if(!flags_match(door, ip, tcp)) {
 					continue;
 				}
-				if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
-				   !target_strcmp(dstIP, door->target)) {
+                if(door->otp_ports != (pthread_t)NULL) {
+                    pthread_mutex_lock(&door->otp_mutex); // We need exclusive access for otp ports
+                    t_port = door->sequence[0];
+                    pthread_mutex_unlock(&door->otp_mutex); // We release exclusive access for otp ports
+                } else
+                    t_port = door->sequence[0];
+				if(ip->ip_p == door->protocol[0] && dport == t_port && !target_strcmp(dstIP, door->target)) {
 					struct hostent *he;
 					/* create a new entry */
 					attempt = (knocker_t*)malloc(sizeof(knocker_t));
@@ -1661,8 +2101,31 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 						perror("malloc");
 						exit(1);
 					}
-					attempt->srchost = NULL;
-					strcpy(attempt->src, srcIP);
+                    attempt->pcap_filter_exp = NULL; // We don't know yet if this is a protected attempt, but we suppose so
+                    attempt->srchost = NULL;
+                    strcpy(attempt->src, srcIP);
+                    if(door->otp_ports) {
+                        /* We have a door with otp ports. Will preserve the current port sequence for this attempt */
+                        pthread_mutex_lock(&door->otp_mutex); // We need exclusive access for otp ports
+                        for (jj = 0; jj < door->seqcount; jj++) {
+                            attempt->p_protocol[jj] = attempt->p_protocol[jj+door->seqcount] = door->protocol[jj]; // FIlled up the whole protocol sequence
+                            attempt->p_sequence[jj] = door->sequence[jj]; // FIlled up the initial  port sequence
+                        }
+                        attempt->p_seqcount = door->seqcount;
+                        attempt->tm = door->tm;
+                        pthread_mutex_unlock(&door->otp_mutex); // We release exclusive access for otp ports
+                        if (door->ip_protection) {
+                            /* We have protected ip, fill the rest of the sequence for this attempt */
+                            attempt->p_seqcount = door->seqcount*2;
+                            char tmpb[MAX_SEED_LEN+16];
+                            tmpb[0]='\0';
+                            strcat(tmpb,door->seed);
+                            strcat(tmpb,attempt->src);
+                            fill_otp_ports(tmpb, attempt->p_sequence, jj, jj*2,  door->tm, door->otp_port_range, &door->otp_mutex); // filled up protected ports sequence for ip protected door
+                        }
+                        turn_on(pcap); // Rebuild a filter for this guy
+                     }
+
 					/* try a reverse lookup if enabled  */
 					if (o_lookup) {
 						inaddr.s_addr = ip->ip_src.s_addr;
@@ -1681,7 +2144,6 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			}
 		}
 	}
-
 	list_free(found_attempts);
 }
 
@@ -1703,5 +2165,3 @@ int target_strcmp(char *ip, char *target) {
 
 	return 1;
 }
-
-/* vim: set ts=2 sw=2 noet: */

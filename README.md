@@ -38,7 +38,7 @@ can only be accessed after a successful knock sequence.
      22 to Client.
 
 ### EXAMPLE  WITH ONE TIME PASSWORD AND SRC IP PROTECTION
-Traditional knock approach does not protect the system from MITM attack. If the attacker sniffs the traffic and sends the same packet sequence to knockd, he gains access to the system. To avoid that we can change the sequence after predefined number of seconds, pretty much like Google Authentificator does. However, even in this case there is a chance, that attacker sends the same sequence soon after the valid user and thus gains access to the system. To completely avoid this MITM threat we have to make a random sequence dependent not only on time of packets sents, but also on source ip address of the sender. The example below shows the section of knockd config file, that provides exactly this scenario:
+Traditional knock approach does not protect the system from MITM attack. If the attacker sniffs the traffic and sends the same packet sequence to knockd, he gains access to the system. To avoid this we can change the port sequence after predefined number of seconds, pretty much like Google Authentcator does. However, even in this case, there is a chance, that attacker sends the same nocks sequence soon after the valid user did and thus will gain access to the system. To completely avoid this MITM threat we have to make a random port sequence dependent not only on time of packets sent, but also on source ip address of the sender. The example below shows the section of knockd config file, that provides exactly this scenario:
 
 otp = AAgR%XXx30O$#, 45, 20000, on, tcp, udp, tcp
 

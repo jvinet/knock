@@ -574,6 +574,7 @@ int parseconfig(char *configfile)
 			ptr++;
 			strncpy(section, ptr, sizeof(section));
 			section[sizeof(section)-1] = '\0';
+			section[strlen(section)-1] = '\0';
 			dprint("config: new section: '%s'\n", section);
 			if(!strlen(section)) {
 				fprintf(stderr, "config: line %d: bad section name\n", linenum);

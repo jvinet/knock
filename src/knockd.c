@@ -769,6 +769,7 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 	char *num;
 	char *protocol;
 	char *port;
+	int portnum;
 
 	door->seqcount = 0;	/* reset seqcount */
 	while((num = strsep(&sequence, ","))) {
@@ -778,7 +779,14 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 			return(1);
 		}
 		port = strsep(&num, ":");
-		door->sequence[door->seqcount++] = (unsigned short)atoi(port);
+		/* convert to 4-byte int first so we can easily detect a short overflow */
+		portnum = atoi(port);
+		if(portnum > 65535) {
+			fprintf(stderr, "config: section %s: port %s is invalid\n", door->name, port);
+			return(1);
+		}
+		door->sequence[door->seqcount++] = (unsigned short)portnum;
+		printf(">> Parsed %s to %d\n", port, door->sequence[door->seqcount - 1]);
 		if((protocol = strsep(&num, ":"))){
 			protocol = strtoupper(trim(protocol));
 			if(!strcmp(protocol, "TCP")){
@@ -786,7 +794,7 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 			} else if(!strcmp(protocol, "UDP")) {
 				door->protocol[door->seqcount-1] = IPPROTO_UDP;
 			} else {
-				fprintf(stderr,"config: section %s: unknown protocol in knock sequence\n", door->name);
+				fprintf(stderr, "config: section %s: unknown protocol in knock sequence\n", door->name);
 				logprint("error: section %s: unknown protocol in knock sequence\n", door->name);
 				return(1);
 			}

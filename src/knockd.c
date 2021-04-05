@@ -145,8 +145,8 @@ int target_strcmp(char *ip, char *target);
 pcap_t *cap = NULL;
 FILE *logfd = NULL;
 int lltype = -1;
-int hasIpV4 = 0;
-int hasIpV6 = 0;
+int has_ipv4 = 0;
+int has_ipv6 = 0;
 /* list of IP addresses for given interface
  */
 typedef struct ip_literal {
@@ -171,7 +171,7 @@ int main(int argc, char **argv)
 {
 	struct ifaddrs *ifaddr, *ifa;
 	ip_literal_t *myip;
-	char pcapErr[PCAP_ERRBUF_SIZE] = "";
+	char pcap_err[PCAP_ERRBUF_SIZE] = "";
 	int opt, ret, optidx = 1;
 
 	static struct option opts[] =
@@ -241,9 +241,9 @@ int main(int argc, char **argv)
 
 	/* 50ms timeout for packet capture. See pcap(3pcap) manpage, which
 	 * recommends that a timeout of 0 not be used. */
-	cap = pcap_open_live(o_int, 65535, 0, 50, pcapErr);
-	if(strlen(pcapErr)) {
-		fprintf(stderr, "could not open %s: %s\n", o_int, pcapErr);
+	cap = pcap_open_live(o_int, 65535, 0, 50, pcap_err);
+	if(strlen(pcap_err)) {
+		fprintf(stderr, "could not open %s: %s\n", o_int, pcap_err);
 	}
 	if(cap == NULL) {
 		exit(1);
@@ -279,9 +279,9 @@ int main(int argc, char **argv)
 
 			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skipIpV6))) {
 				if (ifa->ifa_addr->sa_family == AF_INET)
-					hasIpV4 = 1;
+					has_ipv4 = 1;
 				if (ifa->ifa_addr->sa_family == AF_INET6)
-					hasIpV6 = 1;
+					has_ipv6 = 1;
 				if((myip = calloc(1, sizeof(ip_literal_t))) == NULL) {
 					perror("malloc");
 					exit(1);
@@ -966,9 +966,9 @@ void generate_pcap_filter()
 	 */
 	for (ipv6 = 0 ; ipv6 <=1 ; ipv6++)
 	{
-		if (ipv6 == 0 && !hasIpV4)
+		if (ipv6 == 0 && !has_ipv4)
 			continue;
-		if (ipv6 == 1 && !hasIpV6)
+		if (ipv6 == 1 && !has_ipv6)
 			continue;
 
 		if (ipv6 && o_skipIpV6)
@@ -1191,21 +1191,21 @@ void generate_pcap_filter()
 		int first = 1;
 		for(lp = doors; lp; lp = lp->next) {
 			door = (opendoor_t*)lp->data;
-			for (ipv6 = 0 ; ipv6 <= 1 ; ipv6++)
+			for(ipv6 = 0 ; ipv6 <= 1 ; ipv6++)
 			{
-				if (ipv6 == 0 && !hasIpV4)
+				if(ipv6 == 0 && !has_ipv4)
 					continue;
-				if (ipv6 == 1 && !hasIpV6)
-					continue;
-
-				if (ipv6 && o_skipIpV6)
+				if(ipv6 == 1 && !has_ipv6)
 					continue;
 
-				if (first)
+				if(ipv6 && o_skipIpV6)
+					continue;
+
+				if(first)
 					first = 0;
 				else
 					bufsize = realloc_strcat(&buffer, " or ", bufsize);
-				if (ipv6)
+				if(ipv6)
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_expv6, bufsize);
 				else
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);

@@ -106,8 +106,9 @@ int main(int argc, char** argv)
 	hostname = argv[optind++];
 
 	for(; optind < argc; optind++) {
-		unsigned short port, proto = PROTO_TCP;
-		char *ptr, *copy = strdup(argv[optind]), *arg = copy;
+		unsigned short proto = PROTO_TCP;
+		const char *port;
+		char *ptr, *arg = strdup(argv[optind]);
 
 		if((ptr = strchr(arg, ':'))) {
 			*ptr = '\0';
@@ -121,12 +122,11 @@ int main(int argc, char** argv)
 		} else {
 			port = arg;
 		}
-		free(copy);
 
 		/* get host and port based on hints */
 		result = getaddrinfo(hostname, port, &hints, &infoptr);
 		if(result) {
-			fprintf(stderr, "Fail to resolve hostname '%s' on port %s\n",hostname,port);
+			fprintf(stderr, "Failed to resolve hostname '%s' on port %s\n", hostname, port);
 			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
 			exit(1);
 		}

@@ -63,7 +63,7 @@
 extern int daemon(int, int);
 #endif
 
-static char version[] = "0.7.8";
+static char version[] = "0.8";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */

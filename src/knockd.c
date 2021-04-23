@@ -303,7 +303,7 @@ int main(int argc, char **argv)
 						if(myips)
 							myip->next = myips;
 						myips = myip;
-						dprint("Local IP: %s\n", myip->value);
+						dprint("local IP: %s\n", myip->value);
 					}
 				}
 			}
@@ -424,7 +424,6 @@ void cleanup(int signum)
 	int status;
 
 	vprint("waiting for child processes...\n");
-	logprint("waiting for child processes...");
 	wait(&status);
 
 	vprint("closing...\n");
@@ -457,8 +456,8 @@ void reload(int signum)
 	opendoor_t *door;
 	int res_cfg;
 
-	vprint("Re-reading config file: %s\n", o_cfg);
-	logprint("Re-reading config file: %s\n", o_cfg);
+	vprint("re-reading config file: %s\n", o_cfg);
+	logprint("re-reading config file: %s\n", o_cfg);
 
 	for(lp = doors; lp; lp = lp->next) {
 		door = (opendoor_t*)lp->data;
@@ -473,8 +472,7 @@ void reload(int signum)
 
 	res_cfg = parseconfig(o_cfg);
 
-	vprint("Closing log file: %s\n", o_logfile);
-	logprint("Closing log file: %s\n", o_logfile);
+	vprint("closing log file: %s\n", o_logfile);
 
 	/* close the log file */
 	if(logfd) {
@@ -486,8 +484,8 @@ void reload(int signum)
 		exit(1);
 	}
 
-	vprint("Re-opening log file: %s\n", o_logfile);
-	logprint("Re-opening log file: %s\n", o_logfile);
+	vprint("re-opening log file: %s\n", o_logfile);
+	logprint("re-opening log file: %s\n", o_logfile);
 
 	/* re-open the log file */
 	logfd = fopen(o_logfile, "a");
@@ -1158,7 +1156,7 @@ void generate_pcap_filter()
 					cleanup(1);
 				}
 				strcpy(door->pcap_filter_expv6, buffer);
-				dprint("Adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_expv6);
+				dprint("adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_expv6);
 			} else {
 				door->pcap_filter_exp = (char*)malloc(strlen(buffer) + 1);
 				if(door->pcap_filter_exp == NULL) {
@@ -1166,7 +1164,7 @@ void generate_pcap_filter()
 					cleanup(1);
 				}
 				strcpy(door->pcap_filter_exp, buffer);
-				dprint("Adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
+				dprint("adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
 			}
 			buffer[0] = '\0';	/* "clear" the buffer */
 		}

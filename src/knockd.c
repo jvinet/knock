@@ -826,7 +826,6 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 			return(1);
 		}
 		door->sequence[door->seqcount++] = (unsigned short)portnum;
-		printf(">> Parsed %s to %d\n", port, door->sequence[door->seqcount - 1]);
 		if((protocol = strsep(&num, ":"))){
 			protocol = strtoupper(trim(protocol));
 			if(!strcmp(protocol, "TCP")){

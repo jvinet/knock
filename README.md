@@ -41,8 +41,8 @@ can only be accessed after a successful knock sequence.
 ### KNOCKING CLIENTS
 
 The accompanying knock client is very basic.  If you want to do more advanced
-knocks (eg, setting specific tcp flags) then you should take look at hping,
-sendip or packit.
+knocks (eg, setting specific tcp flags) then you should take look at more
+powerful clients.
 
   - [sendip](http://freshmeat.net/projects/sendip/)
 

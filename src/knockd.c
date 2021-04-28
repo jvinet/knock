@@ -274,18 +274,18 @@ int main(int argc, char **argv)
 		cleanup(1);
 	} else {
 		for(ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-			if (ifa->ifa_addr == NULL)
+			if(ifa->ifa_addr == NULL)
 				continue;
 
 			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skipIpV6))) {
-				if (ifa->ifa_addr->sa_family == AF_INET)
+				if(ifa->ifa_addr->sa_family == AF_INET)
 					has_ipv4 = 1;
-				if (ifa->ifa_addr->sa_family == AF_INET6)
+				if(ifa->ifa_addr->sa_family == AF_INET6)
 					has_ipv6 = 1;
 				if((myip = calloc(1, sizeof(ip_literal_t))) == NULL) {
 					perror("malloc");
 					exit(1);
-				} else if ((myip->value = calloc(1,NI_MAXHOST)) == NULL) {
+				} else if((myip->value = calloc(1, NI_MAXHOST)) == NULL) {
 					perror("malloc");
 					exit(1);
 				} else {
@@ -298,7 +298,7 @@ int main(int argc, char **argv)
 						cleanup(1);
 					} else {
 						char * ptr = strchr(myip->value,'%');
-						if (ptr != NULL)
+						if(ptr != NULL)
 							*ptr = '\0';
 						if(myips)
 							myip->next = myips;
@@ -434,7 +434,7 @@ void cleanup(int signum)
 	}
 
 	for(; myip; myip = next) {
-		if (myip->value) {
+		if(myip->value) {
 			free(myip->value);
 		}
 		next = myip->next;
@@ -549,7 +549,7 @@ char* trim(char *str)
 	}
 
 	size_t len = strlen(str);
-	if (len == 0) {
+	if(len == 0) {
 		return str;
 	}
 
@@ -687,7 +687,7 @@ int parseconfig(char *configfile)
 					} else if(!strcmp(key, "SEQUENCE")) {
 						int i;
 						i = parse_port_sequence(ptr, door);
-						if (i > 0) {
+						if(i > 0) {
 							return(i);
 						}
 						dprint_sequence(door, "config: %s: sequence: ", door->name);
@@ -697,7 +697,7 @@ int parseconfig(char *configfile)
 							return(1);
 						}
 						dprint("config: %s: one time sequences file: %s\n", door->name, ptr);
-						if (get_new_one_time_sequence(door) == 0) {
+						if(get_new_one_time_sequence(door) == 0) {
 							dprint_sequence(door, "config: %s: sequence: ", door->name);
 						} else {	/* no more sequences left in the one time sequences file */
 							dprint("config: no more sequences left in the one time sequences file %s\n", ptr);
@@ -945,7 +945,7 @@ void generate_pcap_filter()
 	PMList *lp;
 	opendoor_t *door;
 	ip_literal_t *myip;
-	char *buffer = NULL;   /* temporary buffer to create the individual filter strings */ 
+	char *buffer = NULL;   /* temporary buffer to create the individual filter strings */
 	size_t bufsize = 0;    /* size of buffer */
 	char port_str[10];     /* used by snprintf to convert unsigned short --> string */
 	short head_set = 0;	   /* flag indicating if protocol head is set (i.e. "((tcp dst port") */
@@ -961,14 +961,13 @@ void generate_pcap_filter()
 	 * Example filter for one single door:
 	 * ((tcp dst port 8000 or 8001 or 8002) and tcp[tcpflags] & tcp-syn != 0) or (udp dst port 4000 or 4001)
 	 */
-	for (ipv6 = 0 ; ipv6 <=1 ; ipv6++)
-	{
-		if (ipv6 == 0 && !has_ipv4)
+	for(ipv6 = 0 ; ipv6 <=1 ; ipv6++) {
+		if(ipv6 == 0 && !has_ipv4)
 			continue;
-		if (ipv6 == 1 && !has_ipv6)
+		if(ipv6 == 1 && !has_ipv6)
 			continue;
 
-		if (ipv6 && o_skipIpV6)
+		if(ipv6 && o_skipIpV6)
 			continue;
 
 		for(lp = doors; lp; lp = lp->next) {
@@ -1004,7 +1003,7 @@ void generate_pcap_filter()
 
 			/* accept only incoming packets */
 			for(myip = myips; myip != NULL; myip = myip->next) {
-				if (myip->is_ipv6 != ipv6)
+				if(myip->is_ipv6 != ipv6)
 					continue;
 				if(!head_set) {
 					bufsize = realloc_strcat(&buffer, "((dst host ", bufsize);
@@ -1036,10 +1035,10 @@ void generate_pcap_filter()
 				bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of TCP ports */
 			}
 
-			/* append the TCP flag filters */
+			/* append the TCP flag filters */ 
 			if(tcp_present) {
 				if(door->flag_fin != DONT_CARE) {
-					if (ipv6)
+					if(ipv6)
 						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-fin ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-fin ", bufsize);
@@ -1051,7 +1050,7 @@ void generate_pcap_filter()
 					}
 				}
 				if(door->flag_syn != DONT_CARE) {
-					if (ipv6)
+					if(ipv6)
 						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-syn ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-syn ", bufsize);
@@ -1063,7 +1062,7 @@ void generate_pcap_filter()
 					}
 				}
 				if(door->flag_rst != DONT_CARE) {
-					if (ipv6)
+					if(ipv6)
 						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-rst ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-rst ", bufsize);
@@ -1075,7 +1074,7 @@ void generate_pcap_filter()
 					}
 				}
 				if(door->flag_psh != DONT_CARE) {
-					if (ipv6)
+					if(ipv6)
 						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-push ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
@@ -1087,7 +1086,7 @@ void generate_pcap_filter()
 					}
 				}
 				if(door->flag_ack != DONT_CARE) {
-					if (ipv6)
+					if(ipv6)
 						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-ack ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-ack ", bufsize);
@@ -1099,7 +1098,7 @@ void generate_pcap_filter()
 					}
 				}
 				if(door->flag_urg != DONT_CARE) {
-					if (ipv6)
+					if(ipv6)
 						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-urg ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
 						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-urg ", bufsize);
@@ -1148,7 +1147,7 @@ void generate_pcap_filter()
 			}
 
 			/* allocate the buffer in door holding the filter string, copy it and prepare buffer for being reused. */
-			if (ipv6)
+			if(ipv6)
 			{
 				door->pcap_filter_expv6 = (char*)malloc(strlen(buffer) + 1);
 				if(door->pcap_filter_expv6 == NULL) {
@@ -1171,17 +1170,27 @@ void generate_pcap_filter()
 	}
 
 
-	/* generate the whole pcap filter string if a filter had been modified. Reuse buffer (already "cleared").
+	/* generate the whole pcap filter string if a filter had been modified. Reuse
+	 * buffer (already "cleared").
 	 *
-	 * Note that we don't check if a port is included in multiple doors, we simply concatenate the individual door
-	 * filters and rely on pcap's optimization capabilities.
+	 * Note that we don't check if a port is included in multiple doors, we
+	 * simply concatenate the individual door filters and rely on pcap's
+	 * optimization capabilities.
 	 *
-	 * Example filter for two doors with sequences 8000:tcp,4000:udp,8001:tcp,4001:udp,8002:tcp (syn) and 
-	 * 1234:tcp,4567:tcp,8901:tcp (syn,ack) :
-	 * dst host the.hosts.ip.address and (
-	 *      ((tcp dst port 8000 or 8001 or 8002) and tcp[tcpflags] & tcp-syn != 0) or (udp dst port 4000 or 4001)
-	 *   or ((tcp dst port 1234 or 4567 or 8901) and tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack != 0)
-	 * )
+	 * Example filter for two doors with these sequences:
+	 *   (1) 8000:tcp,4000:udp,8001:tcp,4001:udp,8002:tcp (syn); and
+	 *   (2) 1234:tcp,4567:tcp,8901:tcp (syn,ack)
+	 *
+	 * Filter:
+	 *   dst host the.hosts.ip.address and
+	 *   (
+	 *     ((tcp dst port 8000 or 8001 or 8002)
+	 *       and tcp[tcpflags] & tcp-syn != 0)
+	 *     or (udp dst port 4000 or 4001)
+	 *     or ((tcp dst port 1234 or 4567 or 8901)
+	 *         and tcp[tcpflags] & tcp-syn != 0
+	 *         and tcp[tcpflags] & tcp-ack != 0)
+	 *   )
 	 */
 	if(modified_filters) {
 		/* iterate over all doors */
@@ -1278,7 +1287,7 @@ void free_door(opendoor_t *door)
 		free(door->target);
 		free(door->start_command);
 		free(door->stop_command);
-		if (door->one_time_sequences_fd) {
+		if(door->one_time_sequences_fd) {
 			fclose(door->one_time_sequences_fd);
 		}
 		free(door->pcap_filter_exp);
@@ -1500,16 +1509,16 @@ void process_attempt(knocker_t *attempt)
 	char * stop_command;
 
 	//select
-	if (attempt->from_ipv6)
+	if(attempt->from_ipv6)
 	{
 		start_command = attempt->door->start_command6;
 		stop_command = attempt->door->stop_command6;
 
 		//make default fallback to same than ipv4 if v6 command is not set.
-		if (start_command == NULL) {
+		if(start_command == NULL) {
 			start_command = attempt->door->start_command;
 		}
-		if (stop_command == NULL) {
+		if(stop_command == NULL) {
 			stop_command = attempt->door->stop_command;
 		}
 	} else {
@@ -1583,7 +1592,7 @@ void process_attempt(knocker_t *attempt)
 		 * Note that here the door will eventually be closed in
 		 * get_new_one_time_sequence() if no more sequences are left */
 		if(attempt->door->one_time_sequences_fd) {
-			if (disable_used_one_time_sequence(attempt->door)) {
+			if(disable_used_one_time_sequence(attempt->door)) {
 				return;
 			}
 
@@ -1649,7 +1658,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		return;
 	}
 
-	if (ip->ip_v == 4) {
+	if(ip->ip_v == 4) {
 		if(ip->ip_p == IPPROTO_ICMP) {
 			/* we don't do ICMP */
 			return;
@@ -1709,14 +1718,14 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			pkt_tm->tm_sec);
 
 	/* convert IPs from binary to string */
-	if (ip->ip_v == 4) {
+	if(ip->ip_v == 4) {
 		inaddr.s_addr = ip->ip_src.s_addr;
 		strncpy(src_ip, inet_ntoa(inaddr), sizeof(src_ip)-1);
 		src_ip[sizeof(src_ip)-1] = '\0';
 		inaddr.s_addr = ip->ip_dst.s_addr;
 		strncpy(dst_ip, inet_ntoa(inaddr), sizeof(dst_ip)-1);
 		dst_ip[sizeof(dst_ip)-1] = '\0';
-	} else if (ip->ip_v == 6) {
+	} else if(ip->ip_v == 6) {
 		inet_ntop(AF_INET6, &ip6->ip6_src, src_ip,sizeof(src_ip));
 		inet_ntop(AF_INET6, &ip6->ip6_dst, dst_ip,sizeof(src_ip));
 	} else {
@@ -1776,7 +1785,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			/* If lp is the only element of the list then empty the list */
 			if(lp == attempts) attempts = NULL;
 			lp->prev = lp->next = NULL;
-			if (attempt->srchost) {
+			if(attempt->srchost) {
 				free(attempt->srchost);
 				attempt->srchost = NULL;
 			}
@@ -1840,8 +1849,8 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					attempt->srchost = NULL;
 					strcpy(attempt->src, src_ip);
 					/* try a reverse lookup if enabled  */
-					if (o_lookup) {
-						if (from_ipv6 == 0)
+					if(o_lookup) {
+						if(from_ipv6 == 0)
 						{
 							inaddr.s_addr = ip->ip_src.s_addr;
 							he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
@@ -1874,7 +1883,7 @@ int target_strcmp(char *ip, char *target) {
 	if(target && !strcmp(ip, target))
 		return 0;
 
-	if (target)
+	if(target)
 		return 1;
 
 	for(myip = myips; myip != NULL; myip = myip->next) {

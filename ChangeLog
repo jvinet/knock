@@ -1,5 +1,7 @@
 VERSION         DESCRIPTION
 -----------------------------------------------------------------------------
+0.8           - Multiple fixes (#67, #77)
+              - IPv6 support (Sebastien Valat)
 0.7.8         - Fix for Issue #33, #34 and #35 contributed by Alexander
                 Rumyanstev.
 0.7.7         - Fix for Issue #7 & #17 contributed by Michael Gï¿½hler.
@@ -14,7 +16,7 @@ VERSION         DESCRIPTION
 0.7.4         - Patches from Michael Göhler
                 - Updated gitignore to include additional autoconf files.
                 - Updated Makefile to fix deprecated warning on CPPFLAG
-		- -D_BSD_SOURCE.
+                  -D_BSD_SOURCE.
 0.7.3         - Patches from Jonathon Reinhart
                 - Fixed PCAP filter for PSH flag detection.
               - Patches from Christos Triantafyllidis

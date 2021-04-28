@@ -40,6 +40,7 @@
 #include <netinet/in_systm.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
@@ -62,7 +63,7 @@
 extern int daemon(int, int);
 #endif
 
-static char version[] = "0.7.8";
+static char version[] = "0.8";
 
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */
@@ -83,8 +84,10 @@ typedef struct opendoor {
 	char *target;
 	time_t seq_timeout;
 	char *start_command;
+	char *start_command6;
 	time_t cmd_timeout;
 	char *stop_command;
+	char *stop_command6;
 	flag_stat flag_fin;
 	flag_stat flag_syn;
 	flag_stat flag_rst;
@@ -93,6 +96,7 @@ typedef struct opendoor {
 	flag_stat flag_urg;
 	FILE *one_time_sequences_fd;
 	char *pcap_filter_exp;
+	char *pcap_filter_expv6;
 } opendoor_t;
 PMList *doors = NULL;
 
@@ -102,9 +106,10 @@ PMList *doors = NULL;
 typedef struct knocker {
 	opendoor_t *door;
 	short stage;
-	char src[16];   /* IP address */
+	char src[64];   /* IP address */
 	char *srchost;  /* Hostname */
 	time_t seq_start;
+	int from_ipv6;
 } knocker_t;
 PMList *attempts = NULL;
 
@@ -129,6 +134,7 @@ int disable_used_one_time_sequence(opendoor_t *door);
 long get_current_one_time_sequence_position(opendoor_t *door);
 void generate_pcap_filter();
 size_t realloc_strcat(char **dest, const char *src, size_t size);
+void free_door(opendoor_t *door);
 void close_door(opendoor_t *door);
 char* get_ip(const char *iface, char *buf, int bufsize);
 size_t parse_cmd(char *dest, size_t size, const char *command, const char *src);
@@ -139,11 +145,14 @@ int target_strcmp(char *ip, char *target);
 pcap_t *cap = NULL;
 FILE *logfd = NULL;
 int lltype = -1;
+int has_ipv4 = 0;
+int has_ipv6 = 0;
 /* list of IP addresses for given interface
  */
 typedef struct ip_literal {
 	struct ip_literal *next;
 	char *value;
+	int is_ipv6;
 } ip_literal_t;
 ip_literal_t *myips = NULL;
 
@@ -153,6 +162,7 @@ int  o_debug     = 0;
 int  o_daemon    = 0;
 int  o_lookup    = 0;
 int  o_duplicate = 0;
+int  o_skipIpV6  = 0;
 char o_int[32]           = "";		/* default (eth0) is set after parseconfig() */
 char o_cfg[PATH_MAX]     = "/etc/knockd.conf";
 char o_pidfile[PATH_MAX] = "/var/run/knockd.pid";
@@ -162,7 +172,7 @@ int main(int argc, char **argv)
 {
 	struct ifaddrs *ifaddr, *ifa;
 	ip_literal_t *myip;
-	char pcapErr[PCAP_ERRBUF_SIZE] = "";
+	char pcap_err[PCAP_ERRBUF_SIZE] = "";
 	int opt, ret, optidx = 1;
 
 	static struct option opts[] =
@@ -176,11 +186,12 @@ int main(int argc, char **argv)
 		{"help",      no_argument,       0, 'h'},
 		{"pidfile",   required_argument, 0, 'p'},
 		{"logfile",   required_argument, 0, 'g'},
+		{"only-ip-v4",no_argument,       0, '4'},
 		{"version",   no_argument,       0, 'V'},
 		{0, 0, 0, 0}
 	};
-	
-	while((opt = getopt_long(argc, argv, "vDdli:c:p:g:hV", opts, &optidx))) {
+
+	while((opt = getopt_long(argc, argv, "4vDdli:c:p:g:hV", opts, &optidx))) {
 		if(opt < 0) {
 			break;
 		}
@@ -190,6 +201,7 @@ int main(int argc, char **argv)
 			case 'D': o_debug = 1; break;
 			case 'd': o_daemon = 1; break;
 			case 'l': o_lookup = 1; break;
+			case '4': o_skipIpV6 = 1; break;
 			case 'i': strncpy(o_int, optarg, sizeof(o_int)-1);
 								o_int[sizeof(o_int)-1] = '\0';
 								break;
@@ -230,9 +242,9 @@ int main(int argc, char **argv)
 
 	/* 50ms timeout for packet capture. See pcap(3pcap) manpage, which
 	 * recommends that a timeout of 0 not be used. */
-	cap = pcap_open_live(o_int, 65535, 0, 50, pcapErr);
-	if(strlen(pcapErr)) {
-		fprintf(stderr, "could not open %s: %s\n", o_int, pcapErr);
+	cap = pcap_open_live(o_int, 65535, 0, 50, pcap_err);
+	if(strlen(pcap_err)) {
+		fprintf(stderr, "could not open %s: %s\n", o_int, pcap_err);
 	}
 	if(cap == NULL) {
 		exit(1);
@@ -266,7 +278,11 @@ int main(int argc, char **argv)
 			if (ifa->ifa_addr == NULL)
 				continue;
 
-			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET)) {
+			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skipIpV6))) {
+				if (ifa->ifa_addr->sa_family == AF_INET)
+					has_ipv4 = 1;
+				if (ifa->ifa_addr->sa_family == AF_INET6)
+					has_ipv6 = 1;
 				if((myip = calloc(1, sizeof(ip_literal_t))) == NULL) {
 					perror("malloc");
 					exit(1);
@@ -274,15 +290,21 @@ int main(int argc, char **argv)
 					perror("malloc");
 					exit(1);
 				} else {
-					if(getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in), myip->value, NI_MAXHOST, NULL, 0, NI_NUMERICHOST) != 0) {
+					size_t size = (ifa->ifa_addr->sa_family == AF_INET6) ? sizeof(struct sockaddr_in6) :  sizeof(struct sockaddr_in);
+					myip->is_ipv6 = (ifa->ifa_addr->sa_family == AF_INET6) ? 1 : 0;
+
+					if(getnameinfo(ifa->ifa_addr, size, myip->value, NI_MAXHOST, NULL, 0, NI_NUMERICHOST) != 0) {
 						fprintf(stderr, "error: could not get IP address for %s: %s\n", o_int, strerror(errno));
 						freeifaddrs(ifaddr);
 						cleanup(1);
 					} else {
+						char * ptr = strchr(myip->value,'%');
+						if (ptr != NULL)
+							*ptr = '\0';
 						if(myips)
 							myip->next = myips;
 						myips = myip;
-						dprint("Local IP: %s\n", myip->value);
+						dprint("local IP: %s\n", myip->value);
 					}
 				}
 			}
@@ -399,11 +421,10 @@ void dprint_sequence(opendoor_t *door, char *fmt, ...)
 /* Signal handlers */
 void cleanup(int signum)
 {
-	ip_literal_t *myip = myips;
+	ip_literal_t *myip = myips, *next;
 	int status;
 
 	vprint("waiting for child processes...\n");
-	logprint("waiting for child processes...");
 	wait(&status);
 
 	vprint("closing...\n");
@@ -413,13 +434,12 @@ void cleanup(int signum)
 		unlink(o_pidfile);
 	}
 
-	if(myips) {
-		while(myips) {
-			if(myip->value)
-				free(myip->value);
-			myips = myip->next;
-			free(myip);
+	for(; myip; myip = next) {
+		if (myip->value) {
+			free(myip->value);
 		}
+		next = myip->next;
+		free(myip);
 	}
 
 	exit(signum);
@@ -428,9 +448,7 @@ void cleanup(int signum)
 void child_exit(int signum)
 {
 	int status;
-
-	while ( waitpid( (pid_t)-1, &status, WNOHANG ) > 0 ) continue;
-	return;
+	while( waitpid( (pid_t)-1, &status, WNOHANG ) > 0) continue;
 }
 
 void reload(int signum)
@@ -439,31 +457,36 @@ void reload(int signum)
 	opendoor_t *door;
 	int res_cfg;
 
-	vprint("Re-reading config file: %s\n", o_cfg);
-	logprint("Re-reading config file: %s\n", o_cfg);
+	vprint("re-reading config file: %s\n", o_cfg);
+	logprint("re-reading config file: %s\n", o_cfg);
 
 	for(lp = doors; lp; lp = lp->next) {
 		door = (opendoor_t*)lp->data;
-		close_door(door);
+		free_door(door);
+		lp->data = NULL;
 	}
 	list_free(doors);
+	doors = NULL;
+
+	list_free(attempts);
+	attempts = NULL;
 
 	res_cfg = parseconfig(o_cfg);
 
-	vprint("Closing log file: %s\n", o_logfile);
-	logprint("Closing log file: %s\n", o_logfile);
+	vprint("closing log file: %s\n", o_logfile);
 
 	/* close the log file */
 	if(logfd) {
 		fclose(logfd);
+		logfd = NULL;
 	}
 
 	if(res_cfg) {
 		exit(1);
 	}
 
-	vprint("Re-opening log file: %s\n", o_logfile);
-	logprint("Re-opening log file: %s\n", o_logfile);
+	vprint("re-opening log file: %s\n", o_logfile);
+	logprint("re-opening log file: %s\n", o_logfile);
 
 	/* re-open the log file */
 	logfd = fopen(o_logfile, "a");
@@ -488,6 +511,7 @@ void usage(int exit_code) {
 	printf("  -p, --pidfile          use an alternate pidfile\n");
 	printf("  -g, --logfile          use an alternate logfile\n");
 	printf("  -v, --verbose          be verbose\n");
+	printf("  -4, --only-ip-v4       do not track ipv6\n");
 	printf("  -V, --version          display version\n");
 	printf("  -h, --help             this help\n");
 	printf("\n");
@@ -525,7 +549,12 @@ char* trim(char *str)
 		memmove(str, pch, (strlen(pch) + 1));
 	}
 
-	pch = (char*)(str + (strlen(str) - 1));
+	size_t len = strlen(str);
+	if (len == 0) {
+		return str;
+	}
+
+	pch = (char*)(str + (len - 1));
 	while(isspace(*pch)) {
 		pch--;
 	}
@@ -563,6 +592,7 @@ int parseconfig(char *configfile)
 			ptr = line;
 			ptr++;
 			strncpy(section, ptr, sizeof(section));
+			section[sizeof(section)-1] = '\0';
 			section[strlen(section)-1] = '\0';
 			dprint("config: new section: '%s'\n", section);
 			if(!strlen(section)) {
@@ -582,8 +612,10 @@ int parseconfig(char *configfile)
 				door->seqcount = 0;
 				door->seq_timeout  = SEQ_TIMEOUT; /* default sequence timeout (seconds)  */
 				door->start_command = NULL;
+				door->start_command6 = NULL;
 				door->cmd_timeout = CMD_TIMEOUT; /* default command timeout (seconds) */
 				door->stop_command = NULL;
+				door->stop_command6 = NULL;
 				door->flag_fin = DONT_CARE;
 				door->flag_syn = DONT_CARE;
 				door->flag_rst = DONT_CARE;
@@ -592,6 +624,7 @@ int parseconfig(char *configfile)
 				door->flag_urg = DONT_CARE;
 				door->one_time_sequences_fd = NULL;
 				door->pcap_filter_exp = NULL;
+				door->pcap_filter_expv6 = NULL;
 				doors = list_add(doors, door);
 			}
 		} else {
@@ -685,6 +718,14 @@ int parseconfig(char *configfile)
 						}
 						strcpy(door->start_command, ptr);
 						dprint("config: %s: start_command: %s\n", door->name, door->start_command);
+					} else if(!strcmp(key, "START_COMMAND_6") || !strcmp(key, "COMMAND_6")) {
+						door->start_command6 = malloc(sizeof(char) * (strlen(ptr)+1));
+						if(door->start_command6 == NULL) {
+							perror("malloc");
+							exit(1);
+						}
+						strcpy(door->start_command6, ptr);
+						dprint("config: %s: start_command_6: %s\n", door->name, door->start_command6);
 					} else if(!strcmp(key, "CMD_TIMEOUT")) {
 						door->cmd_timeout = (time_t)atoi(ptr);
 						dprint("config: %s: cmd_timeout: %d\n", door->name, door->cmd_timeout);
@@ -696,6 +737,14 @@ int parseconfig(char *configfile)
 						}
 						strcpy(door->stop_command, ptr);
 						dprint("config: %s: stop_command: %s\n", door->name, door->stop_command);
+					} else if(!strcmp(key, "STOP_COMMAND_6")) {
+						door->stop_command6 = malloc(sizeof(char) * (strlen(ptr)+1));
+						if(door->stop_command6 == NULL) {
+							perror("malloc");
+							exit(1);
+						}
+						strcpy(door->stop_command6, ptr);
+						dprint("config: %s: stop_command_6: %s\n", door->name, door->stop_command6);
 					} else if(!strcmp(key, "TCPFLAGS")) {
 						char *flag;
 						strtoupper(ptr);
@@ -762,6 +811,7 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 	char *num;
 	char *protocol;
 	char *port;
+	int portnum;
 
 	door->seqcount = 0;	/* reset seqcount */
 	while((num = strsep(&sequence, ","))) {
@@ -771,7 +821,13 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 			return(1);
 		}
 		port = strsep(&num, ":");
-		door->sequence[door->seqcount++] = (unsigned short)atoi(port);
+		/* convert to 4-byte int first so we can easily detect a short overflow */
+		portnum = atoi(port);
+		if(portnum > 65535) {
+			fprintf(stderr, "config: section %s: port %s is invalid\n", door->name, port);
+			return(1);
+		}
+		door->sequence[door->seqcount++] = (unsigned short)portnum;
 		if((protocol = strsep(&num, ":"))){
 			protocol = strtoupper(trim(protocol));
 			if(!strcmp(protocol, "TCP")){
@@ -779,7 +835,7 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 			} else if(!strcmp(protocol, "UDP")) {
 				door->protocol[door->seqcount-1] = IPPROTO_UDP;
 			} else {
-				fprintf(stderr,"config: section %s: unknown protocol in knock sequence\n", door->name);
+				fprintf(stderr, "config: section %s: unknown protocol in knock sequence\n", door->name);
 				logprint("error: section %s: unknown protocol in knock sequence\n", door->name);
 				return(1);
 			}
@@ -902,174 +958,220 @@ void generate_pcap_filter()
 	unsigned int i;
 	short modified_filters = 0;  /* flag indicating if at least one filter has changed --> recompile the filter */
 	struct bpf_program bpf_prog; /* compiled BPF filter program */
+	int ipv6;
 
 	/* generate subfilters for each door having a NULL pcap_filter_exp
 	 *
 	 * Example filter for one single door:
 	 * ((tcp dst port 8000 or 8001 or 8002) and tcp[tcpflags] & tcp-syn != 0) or (udp dst port 4000 or 4001)
 	 */
-	for(lp = doors; lp; lp = lp->next) {
-		door = (opendoor_t*)lp->data;
-
-		if(door->pcap_filter_exp != NULL) {
+	for (ipv6 = 0 ; ipv6 <=1 ; ipv6++)
+	{
+		if (ipv6 == 0 && !has_ipv4)
 			continue;
-		}
+		if (ipv6 == 1 && !has_ipv6)
+			continue;
 
-		/* if we get here at least one door had a pcap_filter_exp == NULL */
-		modified_filters = 1;
+		if (ipv6 && o_skipIpV6)
+			continue;
 
-		head_set = 0;
-		tcp_present = 0;
-		udp_present = 0;
+		for(lp = doors; lp; lp = lp->next) {
+			door = (opendoor_t*)lp->data;
 
-		/* allocate memory for buffer if needed.
-		 * The first allocation will be 200 Bytes (should be large enough for common sequences). If there is
-		 * not enough space, a call to realloc_strcat() will eventually increase its size. The buffer will be
-		 * reused for successive doors */
-		if(buffer == NULL) {
-			bufsize = 200;
-			buffer = (char*)malloc(sizeof(char) * bufsize);
+			if(ipv6 == 0 && door->pcap_filter_exp != NULL) {
+				continue;
+			}
+			if(ipv6 == 1 && door->pcap_filter_expv6 != NULL) {
+				continue;
+			}
+
+			/* if we get here at least one door had a pcap_filter_exp == NULL */
+			modified_filters = 1;
+
+			head_set = 0;
+			tcp_present = 0;
+			udp_present = 0;
+
+			/* allocate memory for buffer if needed.
+			* The first allocation will be 200 Bytes (should be large enough for common sequences). If there is
+			* not enough space, a call to realloc_strcat() will eventually increase its size. The buffer will be
+			* reused for successive doors */
 			if(buffer == NULL) {
-				perror("malloc");
-				cleanup(1);
+				bufsize = 200;
+				buffer = (char*)malloc(sizeof(char) * bufsize);
+				if(buffer == NULL) {
+					perror("malloc");
+					cleanup(1);
+				}
+				buffer[0] = '\0';
 			}
-			buffer[0] = '\0';
-		}
 
-		/* accept only incoming packets */
-		for(myip = myips; myip != NULL; myip = myip->next) {
-			if(!head_set) {
-				bufsize = realloc_strcat(&buffer, "((dst host ", bufsize);
-				head_set = 1;
-			} else {
-				bufsize = realloc_strcat(&buffer, " or dst host ", bufsize);
-			}
-			bufsize = realloc_strcat(&buffer, door->target ? door->target : myip->value, bufsize);
-		}
-
-		bufsize = realloc_strcat(&buffer, ") and (", bufsize);
-		head_set = 0;
-
-		/* generate filter for all TCP ports (i.e. "((tcp dst port 4000 or 4001 or 4002) and tcp[tcpflags] & tcp-syn != 0)" */
-		for(i = 0; i < door->seqcount; i++) {
-			if(door->protocol[i] == IPPROTO_TCP) {
-				if(!head_set) {		/* first TCP port in the sequence */
-					bufsize = realloc_strcat(&buffer, "((tcp dst port ", bufsize);
+			/* accept only incoming packets */
+			for(myip = myips; myip != NULL; myip = myip->next) {
+				if (myip->is_ipv6 != ipv6)
+					continue;
+				if(!head_set) {
+					bufsize = realloc_strcat(&buffer, "((dst host ", bufsize);
 					head_set = 1;
-					tcp_present = 1;
-				} else {		/* not the first TCP port in the sequence */
-					bufsize = realloc_strcat(&buffer, " or ", bufsize);
+				} else {
+					bufsize = realloc_strcat(&buffer, " or dst host ", bufsize);
 				}
-				snprintf(port_str, sizeof(port_str), "%hu", door->sequence[i]);		/* unsigned short to string */
-				bufsize = realloc_strcat(&buffer, port_str, bufsize);			/* append port number */
+				bufsize = realloc_strcat(&buffer, door->target ? door->target : myip->value, bufsize);
 			}
-		}
-		if(tcp_present) {
-			bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of TCP ports */
-		}
 
-		/* append the TCP flag filters */
-		if(tcp_present) {
-			if(door->flag_fin != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-fin ", bufsize);
-				if(door->flag_fin == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_fin == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_syn != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-syn ", bufsize);
-				if(door->flag_syn == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_syn == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_rst != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-rst ", bufsize);
-				if(door->flag_rst == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_rst == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_psh != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
-				if(door->flag_psh == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_psh == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_ack != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-ack ", bufsize);
-				if(door->flag_ack == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_ack == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			if(door->flag_urg != DONT_CARE) {
-				bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-urg ", bufsize);
-				if(door->flag_urg == SET) {
-					bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
-				}
-				if(door->flag_urg == NOT_SET) {
-					bufsize = realloc_strcat(&buffer, "== 0", bufsize);
-				}
-			}
-			bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of flags */
-		}
+			bufsize = realloc_strcat(&buffer, ") and (", bufsize);
+			head_set = 0;
 
-		/* append filter for all UDP ports (i.e. "(udp dst port 6543 or 6544 or 6545)" */
-		head_set = 0;
-		for(i = 0; i < door->seqcount; i++) {
-			if(door->protocol[i] == IPPROTO_UDP) {
-				if(!head_set) {		/* first UDP port in the sequence */
-					if(tcp_present) {
+			/* generate filter for all TCP ports (i.e. "((tcp dst port 4000 or 4001 or 4002) and tcp[tcpflags] & tcp-syn != 0)" */
+			for(i = 0; i < door->seqcount; i++) {
+				if(door->protocol[i] == IPPROTO_TCP) {
+					if(!head_set) {		/* first TCP port in the sequence */
+						bufsize = realloc_strcat(&buffer, "((tcp dst port ", bufsize);
+						head_set = 1;
+						tcp_present = 1;
+					} else {		/* not the first TCP port in the sequence */
 						bufsize = realloc_strcat(&buffer, " or ", bufsize);
 					}
-					bufsize = realloc_strcat(&buffer, "(udp dst port ", bufsize);
-					head_set = 1;
-					udp_present = 1;
-				} else {		/* not the first UDP port in the sequence */
-					bufsize = realloc_strcat(&buffer, " or ", bufsize);
+					snprintf(port_str, sizeof(port_str), "%hu", door->sequence[i]);		/* unsigned short to string */
+					bufsize = realloc_strcat(&buffer, port_str, bufsize);			/* append port number */
 				}
-				snprintf(port_str, sizeof(port_str), "%hu", door->sequence[i]);		/* unsigned short to string */
-				bufsize = realloc_strcat(&buffer, port_str, bufsize);			/* append port number */
 			}
-		}
-		if(udp_present) {
-			bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of UDP ports */
-		}
+			if(tcp_present) {
+				bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of TCP ports */
+			}
 
-		bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parantheses around port filters */
+			/* append the TCP flag filters */
+			if(tcp_present) {
+				if(door->flag_fin != DONT_CARE) {
+					if (ipv6)
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-fin ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+					else
+						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-fin ", bufsize);
+					if(door->flag_fin == SET) {
+						bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+					}
+					if(door->flag_fin == NOT_SET) {
+						bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+					}
+				}
+				if(door->flag_syn != DONT_CARE) {
+					if (ipv6)
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-syn ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+					else
+						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-syn ", bufsize);
+					if(door->flag_syn == SET) {
+						bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+					}
+					if(door->flag_syn == NOT_SET) {
+						bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+					}
+				}
+				if(door->flag_rst != DONT_CARE) {
+					if (ipv6)
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-rst ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+					else
+						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-rst ", bufsize);
+					if(door->flag_rst == SET) {
+						bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+					}
+					if(door->flag_rst == NOT_SET) {
+						bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+					}
+				}
+				if(door->flag_psh != DONT_CARE) {
+					if (ipv6)
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-push ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+					else
+						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
+					if(door->flag_psh == SET) {
+						bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+					}
+					if(door->flag_psh == NOT_SET) {
+						bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+					}
+				}
+				if(door->flag_ack != DONT_CARE) {
+					if (ipv6)
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-ack ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+					else
+						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-ack ", bufsize);
+					if(door->flag_ack == SET) {
+						bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+					}
+					if(door->flag_ack == NOT_SET) {
+						bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+					}
+				}
+				if(door->flag_urg != DONT_CARE) {
+					if (ipv6)
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-urg ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+					else
+						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-urg ", bufsize);
+					if(door->flag_urg == SET) {
+						bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
+					}
+					if(door->flag_urg == NOT_SET) {
+						bufsize = realloc_strcat(&buffer, "== 0", bufsize);
+					}
+				}
+				bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of flags */
+			}
 
-		/* test if in any of the precedent calls to realloc_strcat() failed. We can do this safely here because
-		 * realloc_strcat() returns 0 on failure and if a buffer size of 0 is passed to it, the function does
-		 * nothing but returning 0 again. Because we never read buffer in the above code, it is secure to test
-		 * for failure only at this point (it makes the code more readable than checking for failure each time
-		 * realloc_strcat() is called). */
-		if(bufsize == 0) {
-			perror("realloc");
-			cleanup(1);
-		}
+			/* append filter for all UDP ports (i.e. "(udp dst port 6543 or 6544 or 6545)" */
+			head_set = 0;
+			for(i = 0; i < door->seqcount; i++) {
+				if(door->protocol[i] == IPPROTO_UDP) {
+					if(!head_set) {		/* first UDP port in the sequence */
+						if(tcp_present) {
+							bufsize = realloc_strcat(&buffer, " or ", bufsize);
+						}
+						bufsize = realloc_strcat(&buffer, "(udp dst port ", bufsize);
+						head_set = 1;
+						udp_present = 1;
+					} else {		/* not the first UDP port in the sequence */
+						bufsize = realloc_strcat(&buffer, " or ", bufsize);
+					}
+					snprintf(port_str, sizeof(port_str), "%hu", door->sequence[i]);		/* unsigned short to string */
+					bufsize = realloc_strcat(&buffer, port_str, bufsize);			/* append port number */
+				}
+			}
+			if(udp_present) {
+				bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of UDP ports */
+			}
 
-		/* allocate the buffer in door holding the filter string, copy it and prepare buffer for being reused. */
-		door->pcap_filter_exp = (char*)malloc(strlen(buffer) + 1);
-		if(door->pcap_filter_exp == NULL) {
-			perror("malloc");
-			cleanup(1);
+			bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parantheses around port filters */
+
+			/* test if in any of the precedent calls to realloc_strcat() failed. We can do this safely here because
+			* realloc_strcat() returns 0 on failure and if a buffer size of 0 is passed to it, the function does
+			* nothing but returning 0 again. Because we never read buffer in the above code, it is secure to test
+			* for failure only at this point (it makes the code more readable than checking for failure each time
+			* realloc_strcat() is called). */
+			if(bufsize == 0) {
+				perror("realloc");
+				cleanup(1);
+			}
+
+			/* allocate the buffer in door holding the filter string, copy it and prepare buffer for being reused. */
+			if (ipv6)
+			{
+				door->pcap_filter_expv6 = (char*)malloc(strlen(buffer) + 1);
+				if(door->pcap_filter_expv6 == NULL) {
+					perror("malloc");
+					cleanup(1);
+				}
+				strcpy(door->pcap_filter_expv6, buffer);
+				dprint("adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_expv6);
+			} else {
+				door->pcap_filter_exp = (char*)malloc(strlen(buffer) + 1);
+				if(door->pcap_filter_exp == NULL) {
+					perror("malloc");
+					cleanup(1);
+				}
+				strcpy(door->pcap_filter_exp, buffer);
+				dprint("adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
+			}
+			buffer[0] = '\0';	/* "clear" the buffer */
 		}
-		strcpy(door->pcap_filter_exp, buffer);
-		dprint("Adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
-		buffer[0] = '\0';	/* "clear" the buffer */
 	}
 
 
@@ -1087,11 +1189,27 @@ void generate_pcap_filter()
 	 */
 	if(modified_filters) {
 		/* iterate over all doors */
+		int first = 1;
 		for(lp = doors; lp; lp = lp->next) {
 			door = (opendoor_t*)lp->data;
-			bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);
-			if(lp->next != NULL) {
-				bufsize = realloc_strcat(&buffer, " or ", bufsize);
+			for(ipv6 = 0 ; ipv6 <= 1 ; ipv6++)
+			{
+				if(ipv6 == 0 && !has_ipv4)
+					continue;
+				if(ipv6 == 1 && !has_ipv6)
+					continue;
+
+				if(ipv6 && o_skipIpV6)
+					continue;
+
+				if(first)
+					first = 0;
+				else
+					bufsize = realloc_strcat(&buffer, " or ", bufsize);
+				if(ipv6)
+					bufsize = realloc_strcat(&buffer, door->pcap_filter_expv6, bufsize);
+				else
+					bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);
 			}
 		}
 
@@ -1103,11 +1221,11 @@ void generate_pcap_filter()
 		}
 
 		if(pcap_compile(cap, &bpf_prog, buffer, 1, 0) < 0) {	/* optimize filter (1), no netmask (0) (we're not interested in broadcasts) */
-			pcap_perror(cap, "pcap");
+			pcap_perror(cap, "pcap_compile");
 			cleanup(1);
 		}
 		if(pcap_setfilter(cap, &bpf_prog) < 0) {
-			pcap_perror(cap, "pcap");
+			pcap_perror(cap, "pcap_setfilter");
 			cleanup(1);
 		}
 		pcap_freecode(&bpf_prog);
@@ -1131,8 +1249,10 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 {
 	size_t needed_size;
 	size_t new_size;
+	char *orig = *dest;
 
 	if(size == 0) {
+		free(orig);
 		return 0;
 	}
 
@@ -1145,6 +1265,7 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 	if(new_size != size) {
 		*dest = (char*)realloc(*dest, new_size);
 		if(*dest == NULL) {
+			free(orig);
 			return 0;
 		}
 	}
@@ -1155,11 +1276,8 @@ size_t realloc_strcat(char **dest, const char *src, size_t size)
 	return new_size;
 }
 
-/* Disable the door by removing it from the doors list and free all allocated memory.
- */
-void close_door(opendoor_t *door)
+void free_door(opendoor_t *door)
 {
-	doors = list_remove(doors, door);
 	if(door) {
 		free(door->target);
 		free(door->start_command);
@@ -1170,6 +1288,14 @@ void close_door(opendoor_t *door)
 		free(door->pcap_filter_exp);
 		free(door);
 	}
+}
+
+/* Disable the door by removing it from the doors list and free all allocated memory.
+ */
+void close_door(opendoor_t *door)
+{
+	doors = list_remove(doors, door);
+	free_door(door);
 }
 
 /* Get the IP address of an interface
@@ -1296,12 +1422,12 @@ int exec_cmd(char* command, char* name){
  * If examining a TCP packet, try to match flags against those in
  * the door config.
  */
-int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
+int flags_match(opendoor_t* door, int ip_proto, struct tcphdr* tcp)
 {
 	/* if tcp, check the flags to ignore the packets we don't want
 	 * (don't even use it to cancel sequences)
 	 */
-	if(ip->ip_p == IPPROTO_TCP) {
+	if(ip_proto == IPPROTO_TCP) {
 		if(door->flag_fin != DONT_CARE) {
 			if(door->flag_fin == SET && !(tcp->th_flags & TH_FIN)) {
 				dprint("packet is not FIN, ignoring...\n");
@@ -1347,7 +1473,7 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
 				dprint("packet is not ACK, ignoring...\n");
 				return 0;
 			}
-			if(door->flag_ack == NOT_SET && !(tcp->th_flags & TH_ACK)) {
+			if(door->flag_ack == NOT_SET && (tcp->th_flags & TH_ACK)) {
 				dprint("packet is not !ACK, ignoring...\n");
 				return 0;
 			}
@@ -1357,7 +1483,7 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
 				dprint("packet is not URG, ignoring...\n");
 				return 0;
 			}
-			if(door->flag_urg == NOT_SET && !(tcp->th_flags & TH_URG)) {
+			if(door->flag_urg == NOT_SET && (tcp->th_flags & TH_URG)) {
 				dprint("packet is not !URG, ignoring...\n");
 				return 0;
 			}
@@ -1373,6 +1499,28 @@ int flags_match(opendoor_t* door, struct ip* ip, struct tcphdr* tcp)
  */
 void process_attempt(knocker_t *attempt)
 {
+	//select
+	char * start_command;
+	char * stop_command;
+
+	//select
+	if (attempt->from_ipv6)
+	{
+		start_command = attempt->door->start_command6;
+		stop_command = attempt->door->stop_command6;
+
+		//make default fallback to same than ipv4 if v6 command is not set.
+		if (start_command == NULL) {
+			start_command = attempt->door->start_command;
+		}
+		if (stop_command == NULL) {
+			stop_command = attempt->door->stop_command;
+		}
+	} else {
+		start_command = attempt->door->start_command;
+		stop_command = attempt->door->stop_command;
+	}
+
 	/* level up! */
 	attempt->stage++;
 	if(attempt->srchost) {
@@ -1390,7 +1538,7 @@ void process_attempt(knocker_t *attempt)
 			vprint("%s: %s: OPEN SESAME\n", attempt->src, attempt->door->name);
 			logprint("%s: %s: OPEN SESAME", attempt->src, attempt->door->name);
 		}
-		if(attempt->door->start_command && strlen(attempt->door->start_command)) {
+		if(start_command && strlen(start_command)) {
 			/* run the associated command */
 			if(fork() == 0) {
 				/* child */
@@ -1402,14 +1550,14 @@ void process_attempt(knocker_t *attempt)
 
 				/* parse start and stop command and check if the parsed commands fit in the given buffer. Don't
 				 * execute any command if one of them has been truncated */
-				cmd_len = parse_cmd(parsed_start_cmd, sizeof(parsed_start_cmd), attempt->door->start_command, attempt->src);
+				cmd_len = parse_cmd(parsed_start_cmd, sizeof(parsed_start_cmd), start_command, attempt->src);
 				if(cmd_len >= sizeof(parsed_start_cmd)) {	/* command has been truncated --> do NOT execute it */
 					fprintf(stderr, "error: parsed start command has been truncated! --> won't execute it\n");
 					logprint("error: parsed start command has been truncated! --> won't execute it");
 					exit(0); /* exit child */
 				}
-				if(attempt->door->stop_command) {
-					cmd_len = parse_cmd(parsed_stop_cmd, sizeof(parsed_stop_cmd), attempt->door->stop_command, attempt->src);
+				if(stop_command) {
+					cmd_len = parse_cmd(parsed_stop_cmd, sizeof(parsed_stop_cmd), stop_command, attempt->src);
 					if(cmd_len >= sizeof(parsed_stop_cmd)) {	/* command has been truncated --> do NOT execute it */
 						fprintf(stderr, "error: parsed stop command has been truncated! --> won't execute start command\n");
 						logprint("error: parsed stop command has been truncated! --> won't execute start command");
@@ -1420,7 +1568,7 @@ void process_attempt(knocker_t *attempt)
 				/* all parsing ok --> execute the parsed (%IP% = source IP) command */
 				exec_cmd(parsed_start_cmd, attempt->door->name);
 				/* if stop_command is set, sleep for cmd_timeout and run it*/
-				if(attempt->door->stop_command){
+				if(stop_command){
 					sleep(attempt->door->cmd_timeout);
 					if(attempt->srchost) {
 						vprint("%s (%s): %s: command timeout\n", attempt->src, attempt->srchost, attempt->door->name);
@@ -1439,7 +1587,10 @@ void process_attempt(knocker_t *attempt)
 		 * Note that here the door will eventually be closed in
 		 * get_new_one_time_sequence() if no more sequences are left */
 		if(attempt->door->one_time_sequences_fd) {
-			disable_used_one_time_sequence(attempt->door);
+			if (disable_used_one_time_sequence(attempt->door)) {
+				return;
+			}
+
 			get_new_one_time_sequence(attempt->door);
 
 			/* update pcap filter */
@@ -1474,13 +1625,15 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	/* packet structs */
 	struct ether_header* eth = NULL;
 	struct ip* ip = NULL;
+	struct ip6_hdr *ip6 = NULL;
 	struct tcphdr* tcp = NULL;
 	struct udphdr* udp = NULL;
 	char proto[8];
 	/* TCP/IP data */
 	struct in_addr inaddr;
-	unsigned short sport, dport;
-	char srcIP[16], dstIP[16];
+	unsigned short sport = 0;
+	unsigned short dport = 0;
+	char src_ip[64], dst_ip[64];
 	/* timestamp */
 	time_t pkt_secs = hdr->ts.tv_sec;
 	struct tm* pkt_tm;
@@ -1488,15 +1641,18 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	char pkt_time[9];
 	PMList *lp;
 	knocker_t *attempt = NULL;
-	PMList *found_attempts = NULL;
+	PMList *found_attempts = NULL, *found_attempt;
+	int ip_proto = 0;
+	int from_ipv6 = 0;
 
 	if(lltype == DLT_EN10MB) {
 		eth = (struct ether_header*)packet;
-		if(ntohs(eth->ether_type) != ETHERTYPE_IP) {
+		if(ntohs(eth->ether_type) != ETHERTYPE_IP && ntohs(eth->ether_type) != ETHERTYPE_IPV6) {
 			return;
 		}
 
 		ip = (struct ip*)(packet + sizeof(struct ether_header));
+		ip6 = (struct ip6_hdr*)(packet + sizeof(struct ether_header));
 #ifdef __linux__
 	} else if(lltype == DLT_LINUX_SLL) {
 		ip = (struct ip*)((u_char*)packet + 16);
@@ -1508,29 +1664,62 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 		return;
 	}
 
-	if(ip->ip_v != 4) {
+	if(ip->ip_v != 4 && ip->ip_v != 6) {
 		/* no IPv6 yet */
-		dprint("packet is not IPv4, ignoring...\n");
-		return;
-	}
-	if(ip->ip_p == IPPROTO_ICMP) {
-		/* we don't do ICMP */
+		dprint("packet is not IPv4 or IPv6, ignoring...\n");
 		return;
 	}
 
-	sport = dport = 0;
+	if (ip->ip_v == 4) {
+		if(ip->ip_p == IPPROTO_ICMP) {
+			/* we don't do ICMP */
+			return;
+		}
 
-	if(ip->ip_p == IPPROTO_TCP) {
-		strncpy(proto, "tcp", sizeof(proto));
-		tcp = (struct tcphdr*)((u_char*)ip + (ip->ip_hl *4));
-		sport = ntohs(tcp->th_sport);
-		dport = ntohs(tcp->th_dport);
-	}
-	if(ip->ip_p == IPPROTO_UDP) {
-		strncpy(proto, "udp", sizeof(proto));
-		udp = (struct udphdr*)((u_char*)ip + (ip->ip_hl * 4));
-		sport = ntohs(udp->uh_sport);
-		dport = ntohs(udp->uh_dport);
+		sport = dport = 0;
+		from_ipv6 = 0;
+		ip_proto = ip->ip_p;
+
+		if(ip->ip_p == IPPROTO_TCP) {
+			strncpy(proto, "tcp", sizeof(proto));
+			tcp = (struct tcphdr*)((u_char*)ip + (ip->ip_hl *4));
+			sport = ntohs(tcp->th_sport);
+			dport = ntohs(tcp->th_dport);
+		}
+		if(ip->ip_p == IPPROTO_UDP) {
+			strncpy(proto, "udp", sizeof(proto));
+			udp = (struct udphdr*)((u_char*)ip + (ip->ip_hl * 4));
+			sport = ntohs(udp->uh_sport);
+			dport = ntohs(udp->uh_dport);
+		}
+	} else if(ip->ip_v == 6) {
+		if(ip6 == NULL) {
+			fprintf(stderr, "IPv6 is not supported under this link-layer type\n");
+			return;
+		}
+		/* we accept only TCP/UDP */
+		if(ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt != IPPROTO_TCP && ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt != IPPROTO_UDP) {
+			/* we don't do ICMP */
+			dprint("Unsupported IPv6 protocol\n");
+			return;
+		}
+
+		ip_proto = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
+		from_ipv6 = 1;
+		sport = dport = 0;
+
+		if(ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt == IPPROTO_TCP) {
+			strncpy(proto, "tcp", sizeof(proto));
+			tcp = (struct tcphdr*)(ip6+1);
+			sport = ntohs(tcp->th_sport);
+			dport = ntohs(tcp->th_dport);
+		}
+		if(ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt == IPPROTO_UDP) {
+			strncpy(proto, "udp", sizeof(proto));
+			udp = (struct udphdr*)(ip6+1);
+			sport = ntohs(udp->uh_sport);
+			dport = ntohs(udp->uh_dport);
+		}
 	}
 
 	/* get the date/time */
@@ -1541,15 +1730,23 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			pkt_tm->tm_sec);
 
 	/* convert IPs from binary to string */
-	inaddr.s_addr = ip->ip_src.s_addr;
-	strncpy(srcIP, inet_ntoa(inaddr), sizeof(srcIP)-1);
-	srcIP[sizeof(srcIP)-1] = '\0';
-	inaddr.s_addr = ip->ip_dst.s_addr;
-	strncpy(dstIP, inet_ntoa(inaddr), sizeof(dstIP)-1);
-	dstIP[sizeof(dstIP)-1] = '\0';
+	if (ip->ip_v == 4) {
+		inaddr.s_addr = ip->ip_src.s_addr;
+		strncpy(src_ip, inet_ntoa(inaddr), sizeof(src_ip)-1);
+		src_ip[sizeof(src_ip)-1] = '\0';
+		inaddr.s_addr = ip->ip_dst.s_addr;
+		strncpy(dst_ip, inet_ntoa(inaddr), sizeof(dst_ip)-1);
+		dst_ip[sizeof(dst_ip)-1] = '\0';
+	} else if (ip->ip_v == 6) {
+		inet_ntop(AF_INET6, &ip6->ip6_src, src_ip,sizeof(src_ip));
+		inet_ntop(AF_INET6, &ip6->ip6_dst, dst_ip,sizeof(src_ip));
+	} else {
+		//dprint("Invalid protocol (not ipv4 or ipv6) !");
+		return;
+	}
 
 	dprint("%s %s: %s: %s:%d -> %s:%d %d bytes\n", pkt_date, pkt_time,
-			proto, srcIP, sport, dstIP, dport, hdr->len);
+			proto, src_ip, sport, dst_ip, dport, hdr->len);
 
 	/* clean up expired/completed/failed attempts */
 	lp = attempts;
@@ -1614,22 +1811,23 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 	/* look for this guy in our attempts list */
 	for(lp = attempts; lp; lp = lp->next) {
 		knocker_t *att = (knocker_t*)lp->data;
-		if(!strcmp(srcIP, att->src) &&
-		   !target_strcmp(dstIP, att->door->target)) {
+		if(!strcmp(src_ip, att->src) &&
+		   !target_strcmp(dst_ip, att->door->target)) {
 			found_attempts = list_add(found_attempts, att);
 		}
 	}
 
-	if (found_attempts == NULL) {
+	if(found_attempts == NULL) {
 		found_attempts = list_add(found_attempts, NULL);
 	}
 
-	while (found_attempts != NULL) {
-		attempt = (knocker_t*)found_attempts->data;
+	for(found_attempt = found_attempts; found_attempt != NULL; found_attempt = found_attempt->next) {
+		attempt = (knocker_t*)found_attempt->data;
+		found_attempt->data = NULL;
 
 		if(attempt) {
-			int flagsmatch = flags_match(attempt->door, ip, tcp);
-			if(flagsmatch && ip->ip_p == attempt->door->protocol[attempt->stage] &&
+			int flagsmatch = flags_match(attempt->door, ip_proto, tcp);
+			if(flagsmatch && ip_proto == attempt->door->protocol[attempt->stage] &&
 					dport == attempt->door->sequence[attempt->stage]) {
 				process_attempt(attempt);
 			} else if(flagsmatch == 0 || already_matched(attempt, dport, ip->ip_p)) {
@@ -1647,11 +1845,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 			for(lp = doors; lp; lp = lp->next) {
 				opendoor_t *door = (opendoor_t*)lp->data;
 				/* if we're working with TCP, try to match the flags */
-				if(!flags_match(door, ip, tcp)) {
+				if(!flags_match(door, ip_proto, tcp)) {
 					continue;
 				}
-				if(ip->ip_p == door->protocol[0] && dport == door->sequence[0] &&
-				   !target_strcmp(dstIP, door->target)) {
+				if(ip_proto == door->protocol[0] && dport == door->sequence[0] &&
+				   !target_strcmp(dst_ip, door->target)) {
 					struct hostent *he;
 					/* create a new entry */
 					attempt = (knocker_t*)malloc(sizeof(knocker_t));
@@ -1659,12 +1857,18 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 						perror("malloc");
 						exit(1);
 					}
+					attempt->from_ipv6 = from_ipv6;
 					attempt->srchost = NULL;
-					strcpy(attempt->src, srcIP);
+					strcpy(attempt->src, src_ip);
 					/* try a reverse lookup if enabled  */
 					if (o_lookup) {
-						inaddr.s_addr = ip->ip_src.s_addr;
-						he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
+						if (from_ipv6 == 0)
+						{
+							inaddr.s_addr = ip->ip_src.s_addr;
+							he = gethostbyaddr((void *)&inaddr, sizeof(inaddr), AF_INET);
+						} else {
+							he = gethostbyaddr((void *)&ip6->ip6_src, sizeof(ip6->ip6_src), AF_INET6);
+						}
 						if(he) {
 							attempt->srchost = strdup(he->h_name);
 						}
@@ -1678,9 +1882,9 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 				}
 			}
 		}
-
-		found_attempts = found_attempts->next;
 	}
+
+	list_free(found_attempts);
 }
 
 /* Compare ip against door target or all ips of our local interface

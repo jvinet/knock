@@ -1,4 +1,4 @@
-.TH knock 1 "June 26, 2005" "knockd #VERSION#" ""
+.TH knockd 1 "April 22, 2021" "knockd #VERSION#" ""
 .SH NAME
 knock \- port-knock client
 .SH SYNOPSIS
@@ -20,6 +20,12 @@ Wait <t> milliseconds between each port hit.  This can be used in situations
 where a router mistakes your stream of SYN packets as a port scan and blocks
 them.  If the packet rate is slowed with \-\-delay, then the router should let
 the packets through.
+.TP
+.B "\-4, \-\-ipv4 <version>"
+Force usage of IPv4.
+.TP
+.B "\-6, \-\-ipv6 <version>"
+Force usage of IPv6.
 .TP
 .B "\-v, \-\-verbose"
 Output verbose status messages.

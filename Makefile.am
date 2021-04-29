@@ -6,7 +6,7 @@ man_MANS = doc/knock.1
 
 if BUILD_KNOCKD
 sbin_PROGRAMS = knockd
-dist_sbin_SCRIPTS = src/knock_helper_ipt.sh
+libexec_SCRIPTS = src/knock_helper_ipt.sh
 man_MANS += doc/knockd.1
 sysconf_DATA = knockd.conf
 endif

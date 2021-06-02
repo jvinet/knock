@@ -1712,7 +1712,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 
 	/* get the date/time */
 	pkt_tm = localtime(&pkt_secs);
-	snprintf(pkt_date, 11, "%04d-%02d-%02d", pkt_tm->tm_year+1900, pkt_tm->tm_mon,
+	snprintf(pkt_date, 11, "%04d-%02d-%02d", pkt_tm->tm_year+1900, pkt_tm->tm_mon+1,
 			pkt_tm->tm_mday);
 	snprintf(pkt_time, 9, "%02d:%02d:%02d", pkt_tm->tm_hour, pkt_tm->tm_min,
 			pkt_tm->tm_sec);

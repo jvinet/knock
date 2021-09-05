@@ -231,7 +231,7 @@ void list_display(const char *title, PMList *list)
 				int i;
 				cols = len;
 				printf("\n");
-				for (i = 0; i < len+1; i++) {
+				for(i = 0; i < len+1; i++) {
 					printf(" ");
 				}
 			}

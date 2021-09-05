@@ -404,7 +404,7 @@ void dprint_sequence(opendoor_t *door, char *fmt, ...)
 		vprintf(fmt, args);
 		va_end(args);
 		for(i = 0; i < door->seqcount; i++) {
-			switch(door->protocol[i]){
+			switch(door->protocol[i]) {
 				case IPPROTO_UDP:
 					printf((i == door->seqcount-1 ? "%u:udp\n" : "%u:udp,"), door->sequence[i]);
 					break;
@@ -824,9 +824,9 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 			return(1);
 		}
 		door->sequence[door->seqcount++] = (unsigned short)portnum;
-		if((protocol = strsep(&num, ":"))){
+		if((protocol = strsep(&num, ":"))) {
 			protocol = strtoupper(trim(protocol));
-			if(!strcmp(protocol, "TCP")){
+			if(!strcmp(protocol, "TCP")) {
 				door->protocol[door->seqcount-1] = IPPROTO_TCP;
 			} else if(!strcmp(protocol, "UDP")) {
 				door->protocol[door->seqcount-1] = IPPROTO_UDP;
@@ -1407,7 +1407,7 @@ size_t parse_cmd(char* dest, size_t size, const char* command, const char* src)
 
 /* Execute a command through the system shell and wait for return
  */
-int exec_cmd(char* command, char* name){
+int exec_cmd(char* command, char* name) {
 	int ret;
 
 	logprint("%s: running command: %s\n", name, command);
@@ -1573,7 +1573,7 @@ void process_attempt(knocker_t *attempt)
 				/* all parsing ok --> execute the parsed (%IP% = source IP) command */
 				exec_cmd(parsed_start_cmd, attempt->door->name);
 				/* if stop_command is set, sleep for cmd_timeout and run it*/
-				if(stop_command){
+				if(stop_command) {
 					sleep(attempt->door->cmd_timeout);
 					if(attempt->srchost) {
 						vprint("%s (%s): %s: command timeout\n", attempt->src, attempt->srchost, attempt->door->name);

@@ -37,7 +37,7 @@ usage() {
 	echo "-d|--dstport     The destination port to be used in the rule"
 	echo "-p|--proto       The protocol that the rule applies to; default: $IPT_PROTO"
 	echo "-c|--chain       The NetFilter chain to apply the change to; default: $IPT_CHAIN"
-	echo "-m|--comment     Overide default comment text: '$COMMENT_DEFAULT'"
+	echo "-m|--comment     Override default comment text: '$COMMENT_DEFAULT'"
 	echo "-t|--test        Test run - don't actually perform an update to NetFilter"
 	echo "-h|--help        Print this informational screen and exit"
 	echo "-v|--verbose     Print verbose information about actions"

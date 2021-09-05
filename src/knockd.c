@@ -877,7 +877,7 @@ long get_next_one_time_sequence(opendoor_t *door)
 			continue;
 		}
 		if(parse_port_sequence(line, door) > 0) {
-			/* continue searching if parse_port_sequnce returned with an error */
+			/* continue searching if parse_port_sequence returned with an error */
 			continue;
 		}
 		return(pos);
@@ -1134,7 +1134,7 @@ void generate_pcap_filter()
 				bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of UDP ports */
 			}
 
-			bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parantheses around port filters */
+			bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parentheses around port filters */
 
 			/* test if in any of the precedent calls to realloc_strcat() failed. We can do this safely here because
 			* realloc_strcat() returns 0 on failure and if a buffer size of 0 is passed to it, the function does

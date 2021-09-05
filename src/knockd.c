@@ -409,7 +409,7 @@ void dprint_sequence(opendoor_t *door, char *fmt, ...)
 					printf((i == door->seqcount-1 ? "%u:udp\n" : "%u:udp,"), door->sequence[i]);
 					break;
 				case IPPROTO_TCP: /* fallthrough */
-				default: 
+				default:
 					printf((i == door->seqcount-1 ? "%u:tcp\n" : "%u:tcp,"), door->sequence[i]);
 			}
 		}
@@ -609,7 +609,7 @@ int parseconfig(char *configfile)
 				door->name[sizeof(door->name)-1] = '\0';
 				door->target = 0;
 				door->seqcount = 0;
-				door->seq_timeout  = SEQ_TIMEOUT; /* default sequence timeout (seconds)  */
+				door->seq_timeout  = SEQ_TIMEOUT; /* default sequence timeout (seconds) */
 				door->start_command = NULL;
 				door->start_command6 = NULL;
 				door->cmd_timeout = CMD_TIMEOUT; /* default command timeout (seconds) */
@@ -1035,7 +1035,7 @@ void generate_pcap_filter()
 				bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of TCP ports */
 			}
 
-			/* append the TCP flag filters */ 
+			/* append the TCP flag filters */
 			if(tcp_present) {
 				if(door->flag_fin != DONT_CARE) {
 					if(ipv6)
@@ -1848,7 +1848,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					attempt->from_ipv6 = from_ipv6;
 					attempt->srchost = NULL;
 					strcpy(attempt->src, src_ip);
-					/* try a reverse lookup if enabled  */
+					/* try a reverse lookup if enabled */
 					if(o_lookup) {
 						if(from_ipv6 == 0)
 						{

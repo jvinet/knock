@@ -1,8 +1,8 @@
 /*
  *  list.c
- * 
+ *
  *  Copyright (c) 2002-2005 by Judd Vinet <jvinet@zeroflux.org>
- * 
+ *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation; either version 2 of the License, or
@@ -26,7 +26,7 @@
 PMList* list_new()
 {
 	PMList *list = NULL;
-	
+
 	list = (PMList*)calloc(1, sizeof(PMList));
 	if(list == NULL) {
 		return(NULL);

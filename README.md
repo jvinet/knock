@@ -2,7 +2,7 @@
 
 Copyright (c) 2004, Judd Vinet <jvinet@zeroflux.org>
 
-### ABOUT  
+### ABOUT
 
 This is a port-knocking server/client.  Port-knocking is a method where a
 server can sniff one of its interfaces for a special "knock" sequence of
@@ -22,7 +22,7 @@ installed. Then run the following:
     $ sudo make install
 
 
-### EXAMPLE  
+### EXAMPLE
 
 The example below could be used to run a strict (DENY policy) firewall that
 can only be accessed after a successful knock sequence.
@@ -47,10 +47,9 @@ powerful clients.
   - [sendip](http://freshmeat.net/projects/sendip/)
 
 
-### OTHER IMPLEMENTATIONS  
+### OTHER IMPLEMENTATIONS
 
 Here are some other implementations of port-knocking:
 
   - [pasmal](http://sourceforge.net/projects/pasmal/)
   - [doorman](http://doorman.sourceforge.net/)
-

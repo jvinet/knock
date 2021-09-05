@@ -45,17 +45,16 @@ usage() {
 
 ARGS=$(getopt -o aixf:d:p:c:m::thv -l "append,insert,delete,srcaddr:,dstport:,proto:,chain:,comment::,test,help,verbose" -n "$SCRIPT_NAME" -- "$@")
 
-if [ $? -ne 0 ];
-then
-        echo "$SCRIPT_NAME - Error! Invalid arguments"
-        usage
-        exit 1
+if [ $? -ne 0 ]; then
+	echo "$SCRIPT_NAME - Error! Invalid arguments"
+	usage
+	exit 1
 fi
 
 eval set -- "$ARGS"
 
 while true; do
-        case "$1" in
+	case "$1" in
 		-a|--append)
 			IPT_METHOD="-A"
 			shift;
@@ -88,7 +87,7 @@ while true; do
 			case "$2" in
 				"")
 					IPT_COMMENT=$COMMENT_DEFAULT;
-					shift 2;;
+					shift 2 ;;
 				*)
 					IPT_COMMENT=$2;
 					shift 2 ;;
@@ -96,8 +95,8 @@ while true; do
 		;;
 		-t|--test)
 			DRY_RUN=1
-                        shift;
-                ;;
+			shift;
+		;;
 		-h|--help)
 			usage
 			shift;
@@ -107,11 +106,11 @@ while true; do
 			VERBOSE=1
 			shift;
 		;;
-                --)
-                        shift;
-                        break;
-                ;;
-        esac
+		--)
+			shift;
+			break;
+		;;
+	esac
 done
 
 # Begin sanity checks
@@ -175,7 +174,6 @@ done
 if [ "$VERBOSE" -eq 1 ]; then
 	echo "$SCRIPT_NAME - Seen: $SEEN"
 fi
-
 
 if [ "$SEEN" -eq 0 ]; then
 	if [ "$VERBOSE" -eq 1 ]; then

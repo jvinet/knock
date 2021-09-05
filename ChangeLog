@@ -4,7 +4,7 @@ VERSION         DESCRIPTION
               - IPv6 support (Sebastien Valat)
 0.7.8         - Fix for Issue #33, #34 and #35 contributed by Alexander
                 Rumyanstev.
-0.7.7         - Fix for Issue #7 & #17 contributed by Michael G�hler.
+0.7.7         - Fix for Issue #7 & #17 contributed by Michael Göhler.
                 All IPs assigned to a single interface are now listened on.
               - Fix for compile warning on OSX where daemon() is deprecated.
               - Fix for Issue #15 - list.c OpenBSD segfault: change malloc
@@ -13,7 +13,7 @@ VERSION         DESCRIPTION
                 correctly.
 0.7.5         - Added Greg Kuchyt's knock_add script but updated to be a
                 generic IPTables helper that also deletes rules
-0.7.4         - Patches from Michael G�hler
+0.7.4         - Patches from Michael Göhler
                 - Updated gitignore to include additional autoconf files.
                 - Updated Makefile to fix deprecated warning on CPPFLAG
                   -D_BSD_SOURCE.

@@ -3,7 +3,7 @@
 # Original version to add non-duplicated rules by Greg Kuchyt (greg.kuchyt@gmail.com)
 # Updated to handle deletes and be generic by Paul Rogers (paul.rogers@flumps.org)
 
-SCRIPT_NAME=$(basename $0)
+SCRIPT_NAME=$(basename "$0")
 
 AWK="/bin/awk"
 GREP="/bin/grep"
@@ -43,7 +43,7 @@ usage() {
 	echo "-v|--verbose     Print verbose information about actions"
 }
 
-ARGS=$(getopt -o aixf:d:p:c:m::thv -l "append,insert,delete,srcaddr:,dstport:,proto:,chain:,comment::,test,help,verbose" -n $SCRIPT_NAME -- "$@")
+ARGS=$(getopt -o aixf:d:p:c:m::thv -l "append,insert,delete,srcaddr:,dstport:,proto:,chain:,comment::,test,help,verbose" -n "$SCRIPT_NAME" -- "$@")
 
 if [ $? -ne 0 ];
 then
@@ -153,7 +153,7 @@ if [ -n "$IPT_COMMENT" ]; then
 	COMMENT="-m comment --comment '$IPT_COMMENT'"
 fi
 
-$IPTABLES -L $IPT_CHAIN &> /dev/null
+$IPTABLES -L "$IPT_CHAIN" >/dev/null 2>&1
 if [ 0 -ne "$?" ]; then
 	echo "$SCRIPT_NAME - Error: $IPT_CHAIN is not a valid NetFilter chain"
 	exit
@@ -161,13 +161,13 @@ fi
 # End sanity checks
 
 # Dupe checking
-for IP in `$IPTABLES -n -L $IPT_CHAIN | $GREP $IPT_RULE_TARGET | $AWK '{print $4}' | $SORT -u`;
+for IP in `$IPTABLES -n -L "$IPT_CHAIN" | $GREP "$IPT_RULE_TARGET" | $AWK '{print $4}' | $SORT -u`;
 do
 	if [ "$VERBOSE" -eq 1 ]; then
 		echo "$SCRIPT_NAME - $IP"
 	fi
 
-	if [ "$IPT_SRC_IP" == "$IP" ]; then
+	if [ "$IPT_SRC_IP" = "$IP" ]; then
 		SEEN=1
 	fi
 done
@@ -180,7 +180,7 @@ fi
 if [ "$SEEN" -eq 0 ]; then
 	if [ "$VERBOSE" -eq 1 ]; then
 		echo "$SCRIPT_NAME - $IPT_COMMENT"
-		echo $IPTABLES $IPT_METHOD $IPT_CHAIN -s $IPT_SRC_IP -p $IPT_PROTO --dport $IPT_DST_PORT -j $IPT_RULE_TARGET $COMMENT
+		echo "$IPTABLES $IPT_METHOD $IPT_CHAIN -s $IPT_SRC_IP -p $IPT_PROTO --dport $IPT_DST_PORT -j $IPT_RULE_TARGET $COMMENT"
 	fi
 
 	if [ "$DRY_RUN" -eq 0 ]; then

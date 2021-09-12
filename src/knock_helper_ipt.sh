@@ -3,7 +3,7 @@
 # Original version to add non-duplicated rules by Greg Kuchyt (greg.kuchyt@gmail.com)
 # Updated to handle deletes and be generic by Paul Rogers (paul.rogers@flumps.org)
 
-SCRIPT_NAME=$(basename $0)
+SCRIPT_NAME=$(basename "$0")
 
 AWK="/bin/awk"
 GREP="/bin/grep"
@@ -37,25 +37,24 @@ usage() {
 	echo "-d|--dstport     The destination port to be used in the rule"
 	echo "-p|--proto       The protocol that the rule applies to; default: $IPT_PROTO"
 	echo "-c|--chain       The NetFilter chain to apply the change to; default: $IPT_CHAIN"
-	echo "-m|--comment     Overide default comment text: '$COMMENT_DEFAULT'"
+	echo "-m|--comment     Override default comment text: '$COMMENT_DEFAULT'"
 	echo "-t|--test        Test run - don't actually perform an update to NetFilter"
 	echo "-h|--help        Print this informational screen and exit"
 	echo "-v|--verbose     Print verbose information about actions"
 }
 
-ARGS=$(getopt -o aixf:d:p:c:m::thv -l "append,insert,delete,srcaddr:,dstport:,proto:,chain:,comment::,test,help,verbose" -n $SCRIPT_NAME -- "$@")
+ARGS=$(getopt -o aixf:d:p:c:m::thv -l "append,insert,delete,srcaddr:,dstport:,proto:,chain:,comment::,test,help,verbose" -n "$SCRIPT_NAME" -- "$@")
 
-if [ $? -ne 0 ];
-then
-        echo "$SCRIPT_NAME - Error! Invalid arguments"
-        usage
-        exit 1
+if [ $? -ne 0 ]; then
+	echo "$SCRIPT_NAME - Error! Invalid arguments"
+	usage
+	exit 1
 fi
 
 eval set -- "$ARGS"
 
 while true; do
-        case "$1" in
+	case "$1" in
 		-a|--append)
 			IPT_METHOD="-A"
 			shift;
@@ -88,7 +87,7 @@ while true; do
 			case "$2" in
 				"")
 					IPT_COMMENT=$COMMENT_DEFAULT;
-					shift 2;;
+					shift 2 ;;
 				*)
 					IPT_COMMENT=$2;
 					shift 2 ;;
@@ -96,8 +95,8 @@ while true; do
 		;;
 		-t|--test)
 			DRY_RUN=1
-                        shift;
-                ;;
+			shift;
+		;;
 		-h|--help)
 			usage
 			shift;
@@ -107,11 +106,11 @@ while true; do
 			VERBOSE=1
 			shift;
 		;;
-                --)
-                        shift;
-                        break;
-                ;;
-        esac
+		--)
+			shift;
+			break;
+		;;
+	esac
 done
 
 # Begin sanity checks
@@ -153,7 +152,7 @@ if [ -n "$IPT_COMMENT" ]; then
 	COMMENT="-m comment --comment '$IPT_COMMENT'"
 fi
 
-$IPTABLES -L $IPT_CHAIN &> /dev/null
+$IPTABLES -L "$IPT_CHAIN" >/dev/null 2>&1
 if [ 0 -ne "$?" ]; then
 	echo "$SCRIPT_NAME - Error: $IPT_CHAIN is not a valid NetFilter chain"
 	exit
@@ -161,13 +160,13 @@ fi
 # End sanity checks
 
 # Dupe checking
-for IP in `$IPTABLES -n -L $IPT_CHAIN | $GREP $IPT_RULE_TARGET | $AWK '{print $4}' | $SORT -u`;
+for IP in `$IPTABLES -n -L "$IPT_CHAIN" | $GREP "$IPT_RULE_TARGET" | $AWK '{print $4}' | $SORT -u`;
 do
 	if [ "$VERBOSE" -eq 1 ]; then
 		echo "$SCRIPT_NAME - $IP"
 	fi
 
-	if [ "$IPT_SRC_IP" == "$IP" ]; then
+	if [ "$IPT_SRC_IP" = "$IP" ]; then
 		SEEN=1
 	fi
 done
@@ -176,11 +175,10 @@ if [ "$VERBOSE" -eq 1 ]; then
 	echo "$SCRIPT_NAME - Seen: $SEEN"
 fi
 
-
 if [ "$SEEN" -eq 0 ]; then
 	if [ "$VERBOSE" -eq 1 ]; then
 		echo "$SCRIPT_NAME - $IPT_COMMENT"
-		echo $IPTABLES $IPT_METHOD $IPT_CHAIN -s $IPT_SRC_IP -p $IPT_PROTO --dport $IPT_DST_PORT -j $IPT_RULE_TARGET $COMMENT
+		echo "$IPTABLES $IPT_METHOD $IPT_CHAIN -s $IPT_SRC_IP -p $IPT_PROTO --dport $IPT_DST_PORT -j $IPT_RULE_TARGET $COMMENT"
 	fi
 
 	if [ "$DRY_RUN" -eq 0 ]; then

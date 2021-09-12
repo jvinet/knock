@@ -404,12 +404,12 @@ void dprint_sequence(opendoor_t *door, char *fmt, ...)
 		vprintf(fmt, args);
 		va_end(args);
 		for(i = 0; i < door->seqcount; i++) {
-			switch(door->protocol[i]){
+			switch(door->protocol[i]) {
 				case IPPROTO_UDP:
 					printf((i == door->seqcount-1 ? "%u:udp\n" : "%u:udp,"), door->sequence[i]);
 					break;
 				case IPPROTO_TCP: /* fallthrough */
-				default: 
+				default:
 					printf((i == door->seqcount-1 ? "%u:tcp\n" : "%u:tcp,"), door->sequence[i]);
 			}
 		}
@@ -609,7 +609,7 @@ int parseconfig(char *configfile)
 				door->name[sizeof(door->name)-1] = '\0';
 				door->target = 0;
 				door->seqcount = 0;
-				door->seq_timeout  = SEQ_TIMEOUT; /* default sequence timeout (seconds)  */
+				door->seq_timeout  = SEQ_TIMEOUT; /* default sequence timeout (seconds) */
 				door->start_command = NULL;
 				door->start_command6 = NULL;
 				door->cmd_timeout = CMD_TIMEOUT; /* default command timeout (seconds) */
@@ -824,9 +824,9 @@ int parse_port_sequence(char *sequence, opendoor_t *door)
 			return(1);
 		}
 		door->sequence[door->seqcount++] = (unsigned short)portnum;
-		if((protocol = strsep(&num, ":"))){
+		if((protocol = strsep(&num, ":"))) {
 			protocol = strtoupper(trim(protocol));
-			if(!strcmp(protocol, "TCP")){
+			if(!strcmp(protocol, "TCP")) {
 				door->protocol[door->seqcount-1] = IPPROTO_TCP;
 			} else if(!strcmp(protocol, "UDP")) {
 				door->protocol[door->seqcount-1] = IPPROTO_UDP;
@@ -877,7 +877,7 @@ long get_next_one_time_sequence(opendoor_t *door)
 			continue;
 		}
 		if(parse_port_sequence(line, door) > 0) {
-			/* continue searching if parse_port_sequnce returned with an error */
+			/* continue searching if parse_port_sequence returned with an error */
 			continue;
 		}
 		return(pos);
@@ -1035,7 +1035,7 @@ void generate_pcap_filter()
 				bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of TCP ports */
 			}
 
-			/* append the TCP flag filters */ 
+			/* append the TCP flag filters */
 			if(tcp_present) {
 				if(door->flag_fin != DONT_CARE) {
 					if(ipv6)
@@ -1134,7 +1134,7 @@ void generate_pcap_filter()
 				bufsize = realloc_strcat(&buffer, ")", bufsize);		/* close parentheses of UDP ports */
 			}
 
-			bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parantheses around port filters */
+			bufsize = realloc_strcat(&buffer, "))", bufsize);		/* close parentheses around port filters */
 
 			/* test if in any of the precedent calls to realloc_strcat() failed. We can do this safely here because
 			* realloc_strcat() returns 0 on failure and if a buffer size of 0 is passed to it, the function does
@@ -1407,7 +1407,7 @@ size_t parse_cmd(char* dest, size_t size, const char* command, const char* src)
 
 /* Execute a command through the system shell and wait for return
  */
-int exec_cmd(char* command, char* name){
+int exec_cmd(char* command, char* name) {
 	int ret;
 
 	logprint("%s: running command: %s\n", name, command);
@@ -1573,7 +1573,7 @@ void process_attempt(knocker_t *attempt)
 				/* all parsing ok --> execute the parsed (%IP% = source IP) command */
 				exec_cmd(parsed_start_cmd, attempt->door->name);
 				/* if stop_command is set, sleep for cmd_timeout and run it*/
-				if(stop_command){
+				if(stop_command) {
 					sleep(attempt->door->cmd_timeout);
 					if(attempt->srchost) {
 						vprint("%s (%s): %s: command timeout\n", attempt->src, attempt->srchost, attempt->door->name);
@@ -1848,7 +1848,7 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 					attempt->from_ipv6 = from_ipv6;
 					attempt->srchost = NULL;
 					strcpy(attempt->src, src_ip);
-					/* try a reverse lookup if enabled  */
+					/* try a reverse lookup if enabled */
 					if(o_lookup) {
 						if(from_ipv6 == 0)
 						{

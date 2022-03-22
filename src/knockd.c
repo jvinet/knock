@@ -162,8 +162,8 @@ int  o_verbose   = 0;
 int  o_debug     = 0;
 int  o_daemon    = 0;
 int  o_lookup    = 0;
-int  o_skipIpV6  = 0;
-int  o_saveMem   = 0;
+int  o_skip_ipv6 = 0;
+int  o_save_mem  = 0;
 char o_int[32]           = "";		/* default (eth0) is set after parseconfig() */
 char o_cfg[PATH_MAX]     = "/etc/knockd.conf";
 char o_pidfile[PATH_MAX] = "/var/run/knockd.pid";
@@ -203,8 +203,8 @@ int main(int argc, char **argv)
 			case 'D': o_debug = 1; break;
 			case 'd': o_daemon = 1; break;
 			case 'l': o_lookup = 1; break;
-			case '4': o_skipIpV6 = 1; break;
-			case 's': o_saveMem = 1; break;
+			case '4': o_skip_ipv6 = 1; break;
+			case 's': o_save_mem = 1; break;
 			case 'i': strncpy(o_int, optarg, sizeof(o_int)-1);
 								o_int[sizeof(o_int)-1] = '\0';
 								break;
@@ -281,7 +281,7 @@ int main(int argc, char **argv)
 			if(ifa->ifa_addr == NULL)
 				continue;
 
-			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skipIpV6))) {
+			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skip_ipv6))) {
 				if(ifa->ifa_addr->sa_family == AF_INET)
 					has_ipv4 = 1;
 				if(ifa->ifa_addr->sa_family == AF_INET6)
@@ -980,7 +980,7 @@ void generate_pcap_filter()
 		if(ipv6 == 1 && !has_ipv6)
 			continue;
 
-		if(ipv6 && o_skipIpV6)
+		if(ipv6 && o_skip_ipv6)
 			continue;
 
 		for(lp = doors; lp; lp = lp->next) {
@@ -1088,9 +1088,9 @@ void generate_pcap_filter()
 				}
 				if(door->flag_psh != DONT_CARE) {
 					if(ipv6)
-						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-psh ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
+						bufsize = realloc_strcat(&buffer, " and ip6[13+40] & tcp-push ", bufsize);//using directly mask as pcap didn't yet support flags for IPv6
 					else
-						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-psh ", bufsize);
+						bufsize = realloc_strcat(&buffer, " and tcp[tcpflags] & tcp-push ", bufsize);
 					if(door->flag_psh == SET) {
 						bufsize = realloc_strcat(&buffer, "!= 0", bufsize);
 					}
@@ -1212,12 +1212,12 @@ void generate_pcap_filter()
 			door = (opendoor_t*)lp->data;
 			for(ipv6 = 0 ; ipv6 <= 1 ; ipv6++)
 			{
-				if(ipv6 == 0 && !hasIpV4)
+				if(ipv6 == 0 && !has_ipv4)
 					continue;
-				if(ipv6 == 1 && !hasIpV6)
+				if(ipv6 == 1 && !has_ipv6)
 					continue;
 
-				if(ipv6 && o_skipIpV6)
+				if(ipv6 && o_skip_ipv6)
 					continue;
 
 				if(first)
@@ -1226,7 +1226,7 @@ void generate_pcap_filter()
 					bufsize = realloc_strcat(&buffer, " or ", bufsize);
 				if(ipv6) {
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_expv6, bufsize);
-					if(o_saveMem == 1) {
+					if(o_save_mem == 1) {
 						// save memory and free door specific filter here directly
 						free(door->pcap_filter_expv6);
 						door->pcap_filter_expv6 = NULL;
@@ -1234,7 +1234,7 @@ void generate_pcap_filter()
 				}
 				else {
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);
-					if(o_saveMem == 1) {
+					if(o_save_mem == 1) {
 						// save memory and free door specific filter here directly
 						free(door->pcap_filter_exp);
 						door->pcap_filter_exp = NULL;

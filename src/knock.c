@@ -63,7 +63,7 @@ int main(int argc, char** argv)
 	struct addrinfo *infoptr;
 	char ipname[256];
 	int result;
-	char * hostname;
+	char *hostname;
 	static struct option opts[] =
 	{
 		{"verbose",   no_argument,       0, 'v'},
@@ -128,7 +128,7 @@ int main(int argc, char** argv)
 		//get host and port based on hints
 		result = getaddrinfo(hostname, port, &hints, &infoptr);
 		if(result) {
-			fprintf(stderr, "Fail to resolve hostname '%s' on port %s\n",hostname,port);
+			fprintf(stderr, "Fail to resolve hostname '%s' on port %s\n", hostname, port);
 			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
 			exit(1);
 		}
@@ -163,7 +163,6 @@ int main(int argc, char** argv)
 			connect(sd, infoptr->ai_addr, infoptr->ai_addrlen);
 		}
 
-		//close socket
 		close(sd);
 
 		//wait delay

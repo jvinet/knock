@@ -277,7 +277,8 @@ int main(int argc, char **argv)
 			if(ifa->ifa_addr == NULL)
 				continue;
 
-			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skip_ipv6))) {
+			if((strcmp(ifa->ifa_name, o_int) == 0 || strcmp("any", o_int))
+					&& (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skip_ipv6))) {
 				if(ifa->ifa_addr->sa_family == AF_INET)
 					has_ipv4 = 1;
 				if(ifa->ifa_addr->sa_family == AF_INET6)

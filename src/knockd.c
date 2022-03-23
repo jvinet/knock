@@ -521,11 +521,7 @@ void usage(int exit_code) {
 
 void ver() {
 	printf("knockd %s\n", version);
-	printf("Copyright (C) 2004-2019 Judd Vinet <jvinet@zeroflux.org>,"
-		" Sebastien Valat <sebastien.valat@gmail.com>,"
-		" Marius Hoch <hoo@online.de>,"
-		" TDFKAOlli <tdfkaolli@ish.de>"
-		"\n");
+	printf("Copyright (C) 2004-2019 Judd Vinet <jvinet@zeroflux.org>\n");
 	exit(0);
 }
 

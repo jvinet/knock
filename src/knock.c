@@ -203,8 +203,7 @@ void usage() {
 
 void ver() {
 	printf("knock %s\n", version);
-	printf("Copyright (C) 2004-2019 Judd Vinet <jvinet@zeroflux.org>,"
-		" Sebastien Valat <sebastien.valat@gmail.com>\n");
+	printf("Copyright (C) 2004-2019 Judd Vinet <jvinet@zeroflux.org>\n");
 	exit(0);
 }
 

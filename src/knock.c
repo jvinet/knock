@@ -127,7 +127,7 @@ int main(int argc, char** argv)
 		//get host and port based on hints
 		result = getaddrinfo(hostname, port, &hints, &infoptr);
 		if(result) {
-			fprintf(stderr, "Fail to resolve hostname '%s' on port %s\n", hostname, port);
+			fprintf(stderr, "Failed to resolve hostname '%s' on port %s\n", hostname, port);
 			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
 			exit(1);
 		}
@@ -163,11 +163,7 @@ int main(int argc, char** argv)
 		}
 
 		close(sd);
-
-		//wait delay
 		usleep(1000*o_delay);
-
-		//free temp mem
 		freeaddrinfo(infoptr);
 	}
 
@@ -203,7 +199,7 @@ void usage() {
 
 void ver() {
 	printf("knock %s\n", version);
-	printf("Copyright (C) 2004-2019 Judd Vinet <jvinet@zeroflux.org>\n");
+	printf("Copyright (C) 2004-2022 Judd Vinet <jvinet@zeroflux.org>\n");
 	exit(0);
 }
 

@@ -521,7 +521,7 @@ void usage(int exit_code) {
 
 void ver() {
 	printf("knockd %s\n", version);
-	printf("Copyright (C) 2004-2019 Judd Vinet <jvinet@zeroflux.org>\n");
+	printf("Copyright (C) 2004-2022 Judd Vinet <jvinet@zeroflux.org>\n");
 	exit(0);
 }
 

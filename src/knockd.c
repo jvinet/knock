@@ -134,7 +134,6 @@ void generate_pcap_filter();
 size_t realloc_strcat(char **dest, const char *src, size_t size);
 void free_door(opendoor_t *door);
 void close_door(opendoor_t *door);
-char* get_ip(const char *iface, char *buf, int bufsize);
 size_t parse_cmd(char *dest, size_t size, const char *command, const char *src);
 int exec_cmd(char *command, char *name);
 void sniff(u_char *arg, const struct pcap_pkthdr *hdr, const u_char *packet);
@@ -797,7 +796,8 @@ int parseconfig(char *configfile)
 			fprintf(stderr, "error: section '%s' has an empty knock sequence\n", door->name);
 			return(1);
 		}
-		if(door->start_command == NULL && door->start_command6 == NULL) {
+		if((door->start_command == NULL || strlen(door->start_command) == 0) &&
+				(door->start_command6 == NULL || strlen(door->start_command6) == 0)) {
 			fprintf(stderr, "error: section '%s' has no start command\n", door->name);
 			return(1);
 		}
@@ -1305,27 +1305,15 @@ void free_door(opendoor_t *door)
 {
 	if(door) {
 		free(door->target);
-		if(door->start_command) {
-			free(door->start_command);
-		}
-		if(door->start_command6) {
-			free(door->start_command6);
-		}
-		if(door->stop_command) {
-			free(door->stop_command);
-		}
-		if(door->stop_command6) {
-			free(door->stop_command6);
-		}
+		free(door->start_command);
+		free(door->start_command6);
+		free(door->stop_command);
+		free(door->stop_command6);
 		if (door->one_time_sequences_fd) {
 			fclose(door->one_time_sequences_fd);
 		}
-		if(door->pcap_filter_exp) {
-			free(door->pcap_filter_exp);
-		}
-		if(door->pcap_filter_expv6) {
-			free(door->pcap_filter_expv6);
-		}
+		free(door->pcap_filter_exp);
+		free(door->pcap_filter_expv6);
 		free(door);
 	}
 }
@@ -1336,38 +1324,6 @@ void close_door(opendoor_t *door)
 {
 	doors = list_remove(doors, door);
 	free_door(door);
-}
-
-/* Get the IP address of an interface
- */
-char* get_ip(const char* iface, char *buf, int bufsize)
-{
-	struct ifaddrs *addrs=NULL,*tmp=NULL;
-
-	if(bufsize <= 0) {
-		return(NULL);
-	}
-	if(buf == NULL) {
-		return(NULL);
-	}
-	buf[0] = '\0';
-
-	getifaddrs(&addrs);
-	tmp=addrs;
-	while(tmp) {
-		if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET) {
-			struct sockaddr_in *addr_in = (struct sockaddr_in *)tmp->ifa_addr;
-			if (strcmp(iface,tmp->ifa_name) == 0 ) {
-				strncpy(buf, inet_ntoa(addr_in->sin_addr), bufsize-1);
-				buf[bufsize-1] = '\0';
-				freeifaddrs(addrs);
-				return(buf);
-			}
-		}
-		tmp = tmp->ifa_next;
-	}
-	freeifaddrs(addrs);
-	return(NULL);
 }
 
 /* Parse a command line, replacing tokens (eg, %IP%) with their real values and

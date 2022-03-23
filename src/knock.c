@@ -1,8 +1,7 @@
 /*
  *  knock.c
  *
- *  Copyright (c) 2004-2019 by Judd Vinet <jvinet@zeroflux.org>
- *                             Sebastien Valat <sebastien.valat@gmail.com>
+ *  Copyright (c) 2004-2022 by Judd Vinet <jvinet@zeroflux.org>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by

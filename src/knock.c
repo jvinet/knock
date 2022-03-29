@@ -1,7 +1,7 @@
 /*
  *  knock.c
  *
- *  Copyright (c) 2004-2012 by Judd Vinet <jvinet@zeroflux.org>
+ *  Copyright (c) 2004-2022 by Judd Vinet <jvinet@zeroflux.org>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -100,16 +100,17 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 
-	/* prepare hints to select ipv4 or v6 if asked */
+	//prepare hints to select ipv4 or v6 if asked
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = o_ip;
 	hostname = argv[optind++];
 
 	for(; optind < argc; optind++) {
+		const char * port;
 		unsigned short proto = PROTO_TCP;
-		const char *port;
 		char *ptr, *arg = strdup(argv[optind]);
 
+		//select TCP/UDP protocol
 		if((ptr = strchr(arg, ':'))) {
 			*ptr = '\0';
 			port = arg;
@@ -123,7 +124,7 @@ int main(int argc, char** argv)
 			port = arg;
 		}
 
-		/* get host and port based on hints */
+		//get host and port based on hints
 		result = getaddrinfo(hostname, port, &hints, &infoptr);
 		if(result) {
 			fprintf(stderr, "Failed to resolve hostname '%s' on port %s\n", hostname, port);
@@ -131,7 +132,7 @@ int main(int argc, char** argv)
 			exit(1);
 		}
 
-		/* create socket */
+		//create socket
 		if(o_udp || proto == PROTO_UDP) {
 			sd = socket(infoptr->ai_family, SOCK_DGRAM, 0);
 			if(sd == -1) {
@@ -149,10 +150,10 @@ int main(int argc, char** argv)
 			fcntl(sd, F_SETFL, flags | O_NONBLOCK);
 		}
 
-		/* extract ip as string (v4 or v6) */
+		//extract ip as string (v4 or v6)
 		getnameinfo(infoptr->ai_addr, infoptr->ai_addrlen, ipname, sizeof(ipname), NULL, 0, NI_NUMERICHOST);
 
-		/* connect or send UDP packet */
+		//connect or send UDP packet
 		if(o_udp || proto == PROTO_UDP) {
 			vprint("hitting udp %s:%s\n", ipname, port);
 			sendto(sd, "", 1, 0, infoptr->ai_addr, infoptr->ai_addrlen);
@@ -198,7 +199,7 @@ void usage() {
 
 void ver() {
 	printf("knock %s\n", version);
-	printf("Copyright (C) 2004-2012 Judd Vinet <jvinet@zeroflux.org>\n");
+	printf("Copyright (C) 2004-2022 Judd Vinet <jvinet@zeroflux.org>\n");
 	exit(0);
 }
 

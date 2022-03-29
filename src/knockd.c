@@ -1,7 +1,7 @@
 /*
  *  knockd.c
  *
- *  Copyright (c) 2004-2012 by Judd Vinet <jvinet@zeroflux.org>
+ *  Copyright (c) 2004-2022 by Judd Vinet <jvinet@zeroflux.org>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -48,7 +48,6 @@
 #include <netinet/if_ether.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <ifaddrs.h>
@@ -125,7 +124,6 @@ void ver();
 void usage(int exit_code);
 char* strtoupper(char *str);
 char* trim(char *str);
-void runCommand(char *cmd);
 int parseconfig(char *configfile);
 int parse_port_sequence(char *sequence, opendoor_t *door);
 int get_new_one_time_sequence(opendoor_t *door);
@@ -136,7 +134,6 @@ void generate_pcap_filter();
 size_t realloc_strcat(char **dest, const char *src, size_t size);
 void free_door(opendoor_t *door);
 void close_door(opendoor_t *door);
-char* get_ip(const char *iface, char *buf, int bufsize);
 size_t parse_cmd(char *dest, size_t size, const char *command, const char *src);
 int exec_cmd(char *command, char *name);
 void sniff(u_char *arg, const struct pcap_pkthdr *hdr, const u_char *packet);
@@ -161,7 +158,8 @@ int  o_verbose   = 0;
 int  o_debug     = 0;
 int  o_daemon    = 0;
 int  o_lookup    = 0;
-int  o_skipIpV6  = 0;
+int  o_skip_ipv6 = 0;
+int  o_save_mem  = 0;
 char o_int[32]           = "";		/* default (eth0) is set after parseconfig() */
 char o_cfg[PATH_MAX]     = "/etc/knockd.conf";
 char o_pidfile[PATH_MAX] = "/var/run/knockd.pid";
@@ -186,11 +184,12 @@ int main(int argc, char **argv)
 		{"pidfile",   required_argument, 0, 'p'},
 		{"logfile",   required_argument, 0, 'g'},
 		{"only-ip-v4",no_argument,       0, '4'},
+		{"save-mem",  no_argument,       0, 's'},
 		{"version",   no_argument,       0, 'V'},
 		{0, 0, 0, 0}
 	};
 
-	while((opt = getopt_long(argc, argv, "4vDdli:c:p:g:hV", opts, &optidx))) {
+	while((opt = getopt_long(argc, argv, "4vDdli:c:p:g:hVs", opts, &optidx))) {
 		if(opt < 0) {
 			break;
 		}
@@ -200,7 +199,8 @@ int main(int argc, char **argv)
 			case 'D': o_debug = 1; break;
 			case 'd': o_daemon = 1; break;
 			case 'l': o_lookup = 1; break;
-			case '4': o_skipIpV6 = 1; break;
+			case '4': o_skip_ipv6 = 1; break;
+			case 's': o_save_mem = 1; break;
 			case 'i': strncpy(o_int, optarg, sizeof(o_int)-1);
 								o_int[sizeof(o_int)-1] = '\0';
 								break;
@@ -277,7 +277,8 @@ int main(int argc, char **argv)
 			if(ifa->ifa_addr == NULL)
 				continue;
 
-			if((strcmp(ifa->ifa_name, o_int) == 0) && (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skipIpV6))) {
+			if((strcmp(ifa->ifa_name, o_int) == 0 || strcmp("any", o_int) == 0)
+					&& (ifa->ifa_addr->sa_family == AF_INET || (ifa->ifa_addr->sa_family == AF_INET6 && !o_skip_ipv6))) {
 				if(ifa->ifa_addr->sa_family == AF_INET)
 					has_ipv4 = 1;
 				if(ifa->ifa_addr->sa_family == AF_INET6)
@@ -484,14 +485,14 @@ void reload(int signum)
 		exit(1);
 	}
 
-	vprint("re-opening log file: %s\n", o_logfile);
-	logprint("re-opening log file: %s\n", o_logfile);
-
 	/* re-open the log file */
 	logfd = fopen(o_logfile, "a");
 	if(logfd == NULL) {
 		perror("warning: cannot open logfile");
 	}
+
+	vprint("Re-opening log file: %s\n", o_logfile);
+	logprint("Re-opening log file: %s\n", o_logfile);
 
 	/* Fix issue #2 by regenerating the PCAP filter post config file re-read */
 	generate_pcap_filter();
@@ -511,6 +512,7 @@ void usage(int exit_code) {
 	printf("  -g, --logfile          use an alternate logfile\n");
 	printf("  -v, --verbose          be verbose\n");
 	printf("  -4, --only-ip-v4       do not track ipv6\n");
+	printf("  -s, --save-mem         save memory by freeing permanent filter string buffers\n");
 	printf("  -V, --version          display version\n");
 	printf("  -h, --help             this help\n");
 	printf("\n");
@@ -519,7 +521,7 @@ void usage(int exit_code) {
 
 void ver() {
 	printf("knockd %s\n", version);
-	printf("Copyright (C) 2004-2012 Judd Vinet <jvinet@zeroflux.org>\n");
+	printf("Copyright (C) 2004-2022 Judd Vinet <jvinet@zeroflux.org>\n");
 	exit(0);
 }
 
@@ -795,6 +797,11 @@ int parseconfig(char *configfile)
 			fprintf(stderr, "error: section '%s' has an empty knock sequence\n", door->name);
 			return(1);
 		}
+		if((door->start_command == NULL || strlen(door->start_command) == 0) &&
+				(door->start_command6 == NULL || strlen(door->start_command6) == 0)) {
+			fprintf(stderr, "error: section '%s' has no start command\n", door->name);
+			return(1);
+		}
 	}
 
 	return(0);
@@ -967,7 +974,7 @@ void generate_pcap_filter()
 		if(ipv6 == 1 && !has_ipv6)
 			continue;
 
-		if(ipv6 && o_skipIpV6)
+		if(ipv6 && o_skip_ipv6)
 			continue;
 
 		for(lp = doors; lp; lp = lp->next) {
@@ -1155,7 +1162,7 @@ void generate_pcap_filter()
 					cleanup(1);
 				}
 				strcpy(door->pcap_filter_expv6, buffer);
-				dprint("adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_expv6);
+				dprint("Adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_expv6);
 			} else {
 				door->pcap_filter_exp = (char*)malloc(strlen(buffer) + 1);
 				if(door->pcap_filter_exp == NULL) {
@@ -1163,7 +1170,7 @@ void generate_pcap_filter()
 					cleanup(1);
 				}
 				strcpy(door->pcap_filter_exp, buffer);
-				dprint("adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
+				dprint("Adding pcap expression for door '%s': %s\n", door->name, door->pcap_filter_exp);
 			}
 			buffer[0] = '\0';	/* "clear" the buffer */
 		}
@@ -1204,19 +1211,33 @@ void generate_pcap_filter()
 				if(ipv6 == 1 && !has_ipv6)
 					continue;
 
-				if(ipv6 && o_skipIpV6)
+				if(ipv6 && o_skip_ipv6)
 					continue;
 
 				if(first)
 					first = 0;
 				else
 					bufsize = realloc_strcat(&buffer, " or ", bufsize);
-				if(ipv6)
+				if(ipv6) {
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_expv6, bufsize);
-				else
+					if(o_save_mem == 1) {
+						// save memory and free door specific filter here directly
+						free(door->pcap_filter_expv6);
+						door->pcap_filter_expv6 = NULL;
+					}
+				}
+				else {
 					bufsize = realloc_strcat(&buffer, door->pcap_filter_exp, bufsize);
+					if(o_save_mem == 1) {
+						// save memory and free door specific filter here directly
+						free(door->pcap_filter_exp);
+						door->pcap_filter_exp = NULL;
+					}
+				}
 			}
 		}
+
+		//dprint("FULL : %s\n",buffer);
 
 		/* test if in any of the precedent calls to realloc_strcat() failed. See above why this is ok to do this only
 		 * at this point */
@@ -1286,11 +1307,14 @@ void free_door(opendoor_t *door)
 	if(door) {
 		free(door->target);
 		free(door->start_command);
+		free(door->start_command6);
 		free(door->stop_command);
-		if(door->one_time_sequences_fd) {
+		free(door->stop_command6);
+		if (door->one_time_sequences_fd) {
 			fclose(door->one_time_sequences_fd);
 		}
 		free(door->pcap_filter_exp);
+		free(door->pcap_filter_expv6);
 		free(door);
 	}
 }
@@ -1301,40 +1325,6 @@ void close_door(opendoor_t *door)
 {
 	doors = list_remove(doors, door);
 	free_door(door);
-}
-
-/* Get the IP address of an interface
- */
-char* get_ip(const char* iface, char *buf, int bufsize)
-{
-	int s;
-	struct ifreq ifr;
-
-	if(bufsize <= 0) {
-		return(NULL);
-	}
-	if(buf == NULL) {
-		return(NULL);
-	}
-	buf[0] = '\0';
-
-	s = socket(AF_INET, SOCK_DGRAM, 0);
-	if(s < 0) {
-		return(NULL);
-	}
-
-	bzero((void*)(&ifr.ifr_name), sizeof(ifr.ifr_name));
-	strncpy(ifr.ifr_name, iface, sizeof(ifr.ifr_name)-1);
-	ifr.ifr_name[sizeof(ifr.ifr_name)-1] = '\0';
-	if(ioctl(s, SIOCGIFADDR, &ifr)) {
-		close(s);
-		return(NULL);
-	}
-	close(s);
-
-	strncpy(buf, inet_ntoa((*(struct sockaddr_in *)&ifr.ifr_addr).sin_addr), bufsize-1);
-	buf[bufsize-1] = '\0';
-	return(buf);
 }
 
 /* Parse a command line, replacing tokens (eg, %IP%) with their real values and
@@ -1599,8 +1589,14 @@ void process_attempt(knocker_t *attempt)
 			get_new_one_time_sequence(attempt->door);
 
 			/* update pcap filter */
-			free(attempt->door->pcap_filter_exp);
-			attempt->door->pcap_filter_exp = NULL;
+			if(attempt->door->pcap_filter_expv6) {
+				free(attempt->door->pcap_filter_expv6);
+				attempt->door->pcap_filter_expv6 = NULL;
+			}
+			if(attempt->door->pcap_filter_exp) {
+				free(attempt->door->pcap_filter_exp);
+				attempt->door->pcap_filter_exp = NULL;
+			}
 			generate_pcap_filter();
 		}
 	}
@@ -1644,9 +1640,11 @@ void sniff(u_char* arg, const struct pcap_pkthdr* hdr, const u_char* packet)
 #ifdef __linux__
 	} else if(lltype == DLT_LINUX_SLL) {
 		ip = (struct ip*)((u_char*)packet + 16);
+		ip6 = (struct ip6_hdr*)((u_char*)packet + 16);
 #endif
 	} else if(lltype == DLT_RAW) {
 		ip = (struct ip*)((u_char*)packet);
+		ip6 = (struct ip6_hdr*)((u_char*)packet);
 	} else {
 		dprint("link layer header type of packet not recognized, ignoring...\n");
 		return;

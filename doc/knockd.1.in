@@ -15,7 +15,8 @@ up holes in a firewall for quick access.
 .SH COMMANDLINE OPTIONS
 .TP
 .B "\-i, \-\-interface <int>"
-Specify an interface to listen on.  The default is \fIeth0\fP.
+Specify an interface to listen on.  The default is \fIeth0\fP. To listen to 
+all interfaces set interface to \fIany\fP.
 .TP
 .B "\-d, \-\-daemon"
 Become a daemon.  This is usually desired for normal server-like operation.
@@ -33,6 +34,9 @@ Lookup DNS names for log entries. This may be a security risk! See section
 .TP
 .B "\-4, \-\-only-ip-v4"
 Ignore packets from IPv6 and handle only IPv4.
+.TP
+.B "\-s, \-\-save-mem"
+Try save runtime memory usage on low mem systems.
 .TP
 .B "\-v, \-\-verbose"
 Output verbose status messages.

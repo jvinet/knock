@@ -1537,7 +1537,7 @@ void process_attempt(knocker_t *attempt)
 	/* Check if the cooldown period is not over */
 	dprint("%s: pkt_secs = %d, last_opened = %d, seq_cooldown = %d\n", attempt->door->name, time(NULL), 
 		attempt->door->last_opened, attempt->door->seq_cooldown);
-	if((time(NULL) - attempt->door->last_opened) <= attempt->door->seq_cooldown) {
+	if((time(NULL) - attempt->door->last_opened) < attempt->door->seq_cooldown) {
 		vprint("%s: knock ignored due to cooldown\n", attempt->door->name);
 		attempt->stage = -1;	// Erase the attempt
 		return;

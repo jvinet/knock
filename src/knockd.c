@@ -68,6 +68,7 @@ static char version[] = "0.8";
 #define SEQ_TIMEOUT 25 /* default knock timeout in seconds */
 #define CMD_TIMEOUT 10 /* default timeout in seconds between start and stop commands */
 #define SEQ_MAX     32 /* maximum number of ports in a knock sequence */
+#define SEQ_COOLDOWN 0 /* default cooldown timer after a successful knock */
 
 typedef enum _flag_stat {
 	DONT_CARE,  /* 0 */
@@ -88,6 +89,8 @@ typedef struct opendoor {
 	time_t cmd_timeout;
 	char *stop_command;
 	char *stop_command6;
+	time_t last_opened;
+	time_t seq_cooldown;
 	flag_stat flag_fin;
 	flag_stat flag_syn;
 	flag_stat flag_rst;
@@ -615,6 +618,8 @@ int parseconfig(char *configfile)
 				door->cmd_timeout = CMD_TIMEOUT; /* default command timeout (seconds) */
 				door->stop_command = NULL;
 				door->stop_command6 = NULL;
+				door->last_opened = 0;
+				door->seq_cooldown = SEQ_COOLDOWN; /* default port cooldown (seconds) */
 				door->flag_fin = DONT_CARE;
 				door->flag_syn = DONT_CARE;
 				door->flag_rst = DONT_CARE;
@@ -741,6 +746,9 @@ int parseconfig(char *configfile)
 						}
 						strcpy(door->stop_command6, ptr);
 						dprint("config: %s: stop_command_6: %s\n", door->name, door->stop_command6);
+					} else if(!strcmp(key, "SEQ_COOLDOWN") || !strcmp(key, "COOLDOWN")) {
+						door->seq_cooldown = (time_t)atoi(ptr);
+						dprint("config: %s: seq_cooldown: %d\n", door->name, door->seq_cooldown);
 					} else if(!strcmp(key, "TCPFLAGS")) {
 						char *flag;
 						strtoupper(ptr);
@@ -1526,6 +1534,18 @@ void process_attempt(knocker_t *attempt)
 		stop_command = attempt->door->stop_command;
 	}
 
+	/* Check if the cooldown period is not over */
+	dprint("%s: time = %d, last_opened = %d, seq_cooldown = %d\n", attempt->door->name, time(NULL), 
+		attempt->door->last_opened, attempt->door->seq_cooldown);
+	if((time(NULL) - attempt->door->last_opened) < attempt->door->seq_cooldown) {
+		vprint("%s: knock ignored due to cooldown\n", attempt->door->name);
+		attempt->stage = -1;	// Erase the attempt
+		return;
+	} else {
+		/* We clear the last_opened field if the cooldown is over*/
+		attempt->door->last_opened = 0;
+	}
+
 	/* level up! */
 	attempt->stage++;
 	if(attempt->srchost) {
@@ -1543,6 +1563,13 @@ void process_attempt(knocker_t *attempt)
 			vprint("%s: %s: OPEN SESAME\n", attempt->src, attempt->door->name);
 			logprint("%s: %s: OPEN SESAME", attempt->src, attempt->door->name);
 		}
+				
+		/* Start the cooldown for this sequence */
+		if(attempt->door->last_opened == 0) {
+			attempt->door->last_opened = time(NULL);
+			dprint("%s: %s: set last_opened time to %d\n", attempt->src, attempt->door->name, attempt->door->last_opened);	
+		}
+
 		if(start_command && strlen(start_command)) {
 			/* run the associated command */
 			if(fork() == 0) {
